@@ -1,0 +1,35 @@
+name: audioapp
+description: Interactive audio learning platform for visually impaired students in Uganda.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  flutter_tts: ^4.0.2
+  just_audio: ^0.9.36
+  drift: ^2.14.0
+  drift_flutter: ^0.1.0
+  path_provider: ^2.1.2
+  path: ^1.9.0
+  file_picker: ^8.0.3
+  go_router: ^13.2.0
+  connectivity_plus: ^5.0.2
+  pdfx: ^2.6.0
+  flutter_riverpod: ^2.5.1
+  shared_preferences: ^2.2.3
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  drift_dev: ^2.14.0
+  build_runner: ^2.4.8
+
+flutter:
+  uses-material-design: true

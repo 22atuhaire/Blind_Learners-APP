@@ -1,0 +1,132 @@
+# Flutter / Dart / Pub
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+pubspec.lock
+/build/
+/coverage/
+**/doc/api/
+
+# Flutter generated files
+**/ios/Flutter/.last_build_id
+**/*.g.dart
+**/*.freezed.dart
+**/*.mocks.dart
+
+# build_runner / drift codegen
+*.drift.dart
+*.drift
+
+# Android
+**/android/**/gradle-wrapper.jar
+**/android/.gradle/
+**/android/.kotlin/
+**/android/captures/
+**/android/gradlew
+**/android/gradlew.bat
+**/android/local.properties
+**/android/**/GeneratedPluginRegistrant.java
+**/android/**/.cxx/
+/android/app/debug/
+/android/app/profile/
+/android/app/release/
+
+# Android signing - NEVER commit these
+key.properties
+**/*.keystore
+**/*.jks
+
+# iOS
+**/ios/**/*sync/
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/ephemeral/
+**/ios/Flutter/app.flx
+**/ios/Flutter/app.zip
+**/ios/Flutter/flutter_assets/
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/ServiceDefinitions.json
+**/ios/Runner/GeneratedPluginRegistrant.*
+**/ios/Pods/
+**/.symlinks/
+**/DerivedData/
+**/xcuserdata/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+*.moved-aside
+**/dgph
+.sconsign.dblite
+.tags*
+
+# CocoaPods
+**/Pods/
+**/Podfile.lock
+
+# macOS
+**/macos/Flutter/ephemeral/
+**/macos/**/Pods/
+**/macos/**/xcuserdata/
+**/macos/**/dgph
+
+# Linux
+**/linux/flutter/ephemeral/
+
+# Windows
+**/windows/flutter/ephemeral/
+
+# Web
+/web/flutter_service_worker.js
+
+# Symbolication & Obfuscation
+app.*.symbols
+app.*.map.json
+
+# IntelliJ / Android Studio
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# VS Code
+.vscode/settings.json
+.vscode/*.log
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.atom/
+.build/
+.buildlog/
+.history/
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+secrets.json
+
+# Crash / profiling dumps
+*.hprof
+*.dmp
