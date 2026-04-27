@@ -23,6 +23,9 @@ dependencies:
   flutter_riverpod: ^2.5.1
   shared_preferences: ^2.2.3
   cupertino_icons: ^1.0.8
+  crypto: ^3.0.3
+  archive: ^3.6.1
+  xml: ^6.5.0
 
 dev_dependencies:
   flutter_test:

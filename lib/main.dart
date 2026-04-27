@@ -1,17 +1,25 @@
 import 'package:flutter/material.dart';
-import 'features/auth/role_selection_screen.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'app/router.dart';
 
 void main() {
-  runApp(const AudioApp());
+  runApp(
+    const ProviderScope(
+      child: AudioApp(),
+    ),
+  );
 }
 
-class AudioApp extends StatelessWidget {
+class AudioApp extends ConsumerWidget {
   const AudioApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'AudioApp',
+  Widget build(BuildContext context, WidgetRef ref) {
+    final router = ref.watch(routerProvider);
+
+    return MaterialApp.router(
+      title: 'Audio Learning Platform',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -19,7 +27,7 @@ class AudioApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const RoleSelectionScreen(),
+      routerConfig: router,
     );
   }
 }

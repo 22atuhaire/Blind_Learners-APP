@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:go_router/go_router.dart';
 
 class RoleSelectionScreen extends StatefulWidget {
   const RoleSelectionScreen({super.key});
@@ -16,16 +17,18 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     super.initState();
     _initTts();
     Future.delayed(const Duration(milliseconds: 500), () {
-      _speak(
-        'Welcome to the Audio Learning Platform. '
-        'Are you a student or a teacher?',
-      );
+      if (mounted) {
+        _speak(
+          'Welcome to the Audio Learning Platform. '
+          'Are you a student or a teacher?',
+        );
+      }
     });
   }
 
   Future<void> _initTts() async {
     await _tts.setLanguage('en-US');
-    await _tts.setSpeechRate(0.9);
+    await _tts.setSpeechRate(0.45);
     await _tts.setVolume(1.0);
   }
 
@@ -102,12 +105,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                     ),
                     onPressed: () {
                       _speak('Student selected. Please enter your PIN.');
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const PinLoginScreen(role: 'student'),
-                        ),
-                      );
+                      context.go('/student/pin');
                     },
                   ),
                 ),
@@ -139,12 +137,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                     ),
                     onPressed: () {
                       _speak('Teacher selected. Please enter your PIN.');
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const PinLoginScreen(role: 'teacher'),
-                        ),
-                      );
+                      context.go('/teacher/pin');
                     },
                   ),
                 ),
@@ -153,19 +146,6 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class PinLoginScreen extends StatelessWidget {
-  final String role;
-  const PinLoginScreen({super.key, required this.role});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('$role Login')),
-      body: const Center(child: Text('PIN screen coming next')),
     );
   }
 }
