@@ -86,47 +86,37 @@ class _TeacherPinScreenState extends ConsumerState<TeacherPinScreen> {
 
   Future<void> _openTtsSettings() async {
     if (defaultTargetPlatform == TargetPlatform.android) {
-      // Open Android TTS settings for voice pack download
-      const url =
-          'android-app://com.android.settings/settings/tts_default_settings';
-      final settingsUri = Uri.parse(url);
       try {
-        if (await canLaunchUrl(settingsUri)) {
+        // Use simple intent:// URI to open Settings app
+        final uri = Uri.parse(
+          'intent://#Intent;action=android.intent.action.MAIN;package=com.android.settings;end',
+        );
+
+        if (await canLaunchUrl(uri)) {
           await launchUrl(
-            settingsUri,
+            uri,
             mode: LaunchMode.externalApplication,
           );
         } else {
-          // Fallback: Open general TTS settings
-          const fallbackUrl = 'android-app://com.google.android.tts';
-          final fallbackUri = Uri.parse(fallbackUrl);
-          if (await canLaunchUrl(fallbackUri)) {
-            await launchUrl(
-              fallbackUri,
-              mode: LaunchMode.externalApplication,
-            );
-          } else if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Open Android sound settings to install or update the TTS voice pack.',
-                ),
-              ),
-            );
-          }
+          _showVoiceDownloadInstructions();
         }
       } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Unable to open TTS settings on this device.',
-              ),
-            ),
-          );
-        }
-        debugPrint('Error opening TTS settings: $e');
+        debugPrint('Error opening settings: $e');
+        _showVoiceDownloadInstructions();
       }
+    }
+  }
+
+  void _showVoiceDownloadInstructions() {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 6),
+          content: Text(
+            'Open Settings > Sound & Vibration > Text-to-speech to download voices.',
+          ),
+        ),
+      );
     }
   }
 
