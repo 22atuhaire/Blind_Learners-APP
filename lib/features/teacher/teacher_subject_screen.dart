@@ -38,7 +38,7 @@ class _TeacherSubjectScreenState extends ConsumerState<TeacherSubjectScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           tooltip: 'Back to dashboard',
-          onPressed: () => context.go('/teacher/dashboard'),
+          onPressed: () => context.pop(),
         ),
       ),
       body: topicsAsync.when(
@@ -82,11 +82,11 @@ class _TeacherSubjectScreenState extends ConsumerState<TeacherSubjectScreen> {
               return _TopicTile(
                 topic: topics[index],
                 onDelete: () => _confirmDeleteTopic(topics[index]),
-                onNavigateToQuestions: (lessonId) => context.goNamed(
+                onNavigateToQuestions: (lessonId) => context.pushNamed(
                   'teacherQuestions',
                   pathParameters: {'lessonId': lessonId.toString()},
                 ),
-                onNavigateToUpload: (topicId) => context.goNamed(
+                onNavigateToUpload: (topicId) => context.pushNamed(
                   'teacherUpload',
                   pathParameters: {'topicId': topicId.toString()},
                 ),

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_tts/flutter_tts.dart';
 
@@ -19,8 +20,13 @@ class TtsService {
   // ──────────────────────────────────────────────────────────────
 
   final FlutterTts _tts = FlutterTts();
+  static const String _googleTtsEngineId = 'com.google.android.tts';
 
   bool _speaking = false;
+  bool _initialized = false;
+  bool _googleTtsInstalled = false;
+  bool _usingGoogleTts = false;
+  String? _activeEngine;
 
   /// Completer used by [speakAndWait] to know when an utterance finishes.
   Completer<void>? _completionCompleter;
@@ -32,6 +38,15 @@ class TtsService {
   /// Whether the engine is currently producing audio.
   bool get isSpeaking => _speaking;
 
+  /// Whether Google Speech Services (Google TTS engine) is installed.
+  bool get isGoogleTtsInstalled => _googleTtsInstalled;
+
+  /// Whether this service is currently using Google TTS as the active engine.
+  bool get isUsingGoogleTts => _usingGoogleTts;
+
+  /// Android engine package id currently selected (when available).
+  String? get activeEngine => _activeEngine;
+
   // ──────────────────────────────────────────────────────────────
   // Initialization
   // ──────────────────────────────────────────────────────────────
@@ -42,6 +57,12 @@ class TtsService {
   /// Attempts to use Ugandan English ('en-UG'); silently falls back to
   /// 'en-US' if the locale is unavailable on the device.
   Future<void> initialize() async {
+    if (_initialized) return;
+
+    if (Platform.isAndroid) {
+      await _configureAndroidEngine();
+    }
+
     // ── Language ────────────────────────────────────────────────
     final availableLanguages = await _tts.getLanguages;
     final languages = List<String>.from(
@@ -88,6 +109,33 @@ class TtsService {
         );
       }
     });
+
+    _initialized = true;
+  }
+
+  Future<void> _configureAndroidEngine() async {
+    final rawEngines = await _tts.getEngines;
+    final engines = List<String>.from(
+      (rawEngines as List<dynamic>).map((e) => e.toString()),
+    );
+
+    _googleTtsInstalled = engines.contains(_googleTtsEngineId);
+
+    if (_googleTtsInstalled) {
+      try {
+        await _tts.setEngine(_googleTtsEngineId);
+      } catch (_) {
+        // Keep fallback path if selecting Google engine fails on this device.
+      }
+    }
+
+    final defaultEngine = (await _tts.getDefaultEngine)?.toString();
+    final selectedEngine = _googleTtsInstalled ? _googleTtsEngineId : defaultEngine;
+
+    _activeEngine = (selectedEngine == null || selectedEngine.isEmpty)
+        ? (engines.isNotEmpty ? engines.first : null)
+        : selectedEngine;
+    _usingGoogleTts = _activeEngine == _googleTtsEngineId;
   }
 
   // ──────────────────────────────────────────────────────────────

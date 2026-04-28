@@ -35,12 +35,18 @@ class _TeacherPinScreenState extends ConsumerState<TeacherPinScreen> {
   String _createError = '';
   bool _saving = false;
 
+  bool _checkingVoice = true;
+  bool _googleTtsInstalled = false;
+  bool _usingGoogleTts = false;
+  String? _activeTtsEngine;
+
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
     _loadTeachers();
+    _loadVoiceStatus();
   }
 
   @override
@@ -55,10 +61,24 @@ class _TeacherPinScreenState extends ConsumerState<TeacherPinScreen> {
   Future<void> _loadTeachers() async {
     final db = ref.read(appDatabaseProvider);
     final teachers = await db.teacherDao.getAllTeachers();
+    if (!mounted) return;
     setState(() {
       _teachers = teachers;
       _loading = false;
       _createMode = teachers.isEmpty;
+    });
+  }
+
+  Future<void> _loadVoiceStatus() async {
+    final tts = ref.read(ttsServiceProvider);
+    await tts.initialize();
+
+    if (!mounted) return;
+    setState(() {
+      _checkingVoice = false;
+      _googleTtsInstalled = tts.isGoogleTtsInstalled;
+      _usingGoogleTts = tts.isUsingGoogleTts;
+      _activeTtsEngine = tts.activeEngine;
     });
   }
 
@@ -112,6 +132,10 @@ class _TeacherPinScreenState extends ConsumerState<TeacherPinScreen> {
             style: TextStyle(fontSize: 14, color: Colors.grey),
             textAlign: TextAlign.center,
           ),
+          if (_teachers.isEmpty) ...[
+            const SizedBox(height: 18),
+            _buildVoiceSetupCard(),
+          ],
           const SizedBox(height: 32),
 
           // Name field
@@ -235,6 +259,89 @@ class _TeacherPinScreenState extends ConsumerState<TeacherPinScreen> {
           ],
 
           const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVoiceSetupCard() {
+    if (_checkingVoice) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFD6E4FF)),
+        ),
+        child: const Row(
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Checking speech voice setup...',
+                style: TextStyle(fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final hasPrimary = _googleTtsInstalled && _usingGoogleTts;
+    final title = hasPrimary
+        ? 'Voice Ready: Google Neural TTS'
+        : 'Voice Fallback Ready: Android Built-in TTS';
+    final message = hasPrimary
+        ? 'Primary voice engine is active. Download the English voice pack once on WiFi, then it works offline for students.'
+        : 'Google TTS is not active, so the app automatically uses Android built-in TTS. Student experience and app flow remain unchanged.';
+    final hint = hasPrimary
+        ? 'No extra setup needed now.'
+        : 'For more natural speech, install Google Speech Services and download an English voice pack during first-time setup.';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: hasPrimary ? const Color(0xFFEAFBF0) : const Color(0xFFFFF7E6),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: hasPrimary ? const Color(0xFF91D9A9) : const Color(0xFFF0C36D),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+              color: Color(0xFF1A1A2E),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            message,
+            style: const TextStyle(fontSize: 13, color: Color(0xFF333333)),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            hint,
+            style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568)),
+          ),
+          if (_activeTtsEngine != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Active engine: $_activeTtsEngine',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568)),
+            ),
+          ],
         ],
       ),
     );

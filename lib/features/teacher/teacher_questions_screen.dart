@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:audioapp/shared/services/providers.dart';
 import 'package:audioapp/shared/services/db/app_database.dart';
@@ -59,7 +60,7 @@ class _TeacherQuestionsScreenState
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           tooltip: 'Back',
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => context.pop(),
         ),
       ),
       body: _loading
@@ -272,9 +273,7 @@ class _TeacherQuestionsScreenState
             height: 24,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: isCorrect
-                  ? const Color(0xFF16A34A)
-                  : Colors.grey.shade200,
+              color: isCorrect ? const Color(0xFF16A34A) : Colors.grey.shade200,
             ),
             child: Center(
               child: Text(
@@ -294,11 +293,9 @@ class _TeacherQuestionsScreenState
               text,
               style: TextStyle(
                 fontSize: 13,
-                color: isCorrect
-                    ? const Color(0xFF16A34A)
-                    : Colors.grey.shade800,
-                fontWeight:
-                    isCorrect ? FontWeight.w600 : FontWeight.normal,
+                color:
+                    isCorrect ? const Color(0xFF16A34A) : Colors.grey.shade800,
+                fontWeight: isCorrect ? FontWeight.w600 : FontWeight.normal,
               ),
             ),
           ),

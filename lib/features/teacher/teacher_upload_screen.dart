@@ -48,7 +48,7 @@ class _TeacherUploadScreenState extends ConsumerState<TeacherUploadScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           tooltip: 'Back',
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => context.pop(),
         ),
       ),
       body: SingleChildScrollView(
@@ -474,7 +474,7 @@ class _TeacherUploadScreenState extends ConsumerState<TeacherUploadScreen> {
       // ── 4. Navigate to questions review after a brief pause ───────────
       await Future.delayed(const Duration(seconds: 1));
       if (mounted) {
-        context.goNamed(
+        context.pushNamed(
           'teacherQuestions',
           pathParameters: {'lessonId': lessonId.toString()},
         );

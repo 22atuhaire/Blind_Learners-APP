@@ -1,22 +1,24 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_tts/flutter_tts.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:audioapp/shared/services/providers.dart';
 
-class RoleSelectionScreen extends StatefulWidget {
+class RoleSelectionScreen extends ConsumerStatefulWidget {
   const RoleSelectionScreen({super.key});
 
   @override
-  State<RoleSelectionScreen> createState() => _RoleSelectionScreenState();
+  ConsumerState<RoleSelectionScreen> createState() =>
+      _RoleSelectionScreenState();
 }
 
-class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
-  final FlutterTts _tts = FlutterTts();
-
+class _RoleSelectionScreenState extends ConsumerState<RoleSelectionScreen> {
   @override
   void initState() {
     super.initState();
-    _initTts();
-    Future.delayed(const Duration(milliseconds: 500), () {
+    Future<void>(() async {
+      await ref.read(ttsInitProvider.future);
+      if (!mounted) return;
+      await Future<void>.delayed(const Duration(milliseconds: 500));
       if (mounted) {
         _speak(
           'Welcome to the Audio Learning Platform. '
@@ -26,20 +28,14 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     });
   }
 
-  Future<void> _initTts() async {
-    await _tts.setLanguage('en-US');
-    await _tts.setSpeechRate(0.45);
-    await _tts.setVolume(1.0);
-  }
-
   Future<void> _speak(String text) async {
-    await _tts.stop();
-    await _tts.speak(text);
+    final tts = ref.read(ttsServiceProvider);
+    await tts.speak(text);
   }
 
   @override
   void dispose() {
-    _tts.stop();
+    ref.read(ttsServiceProvider).stop();
     super.dispose();
   }
 
@@ -105,7 +101,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                     ),
                     onPressed: () {
                       _speak('Student selected. Please enter your PIN.');
-                      context.go('/student/pin');
+                      context.push('/student/pin');
                     },
                   ),
                 ),
@@ -137,7 +133,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                     ),
                     onPressed: () {
                       _speak('Teacher selected. Please enter your PIN.');
-                      context.go('/teacher/pin');
+                      context.push('/teacher/pin');
                     },
                   ),
                 ),

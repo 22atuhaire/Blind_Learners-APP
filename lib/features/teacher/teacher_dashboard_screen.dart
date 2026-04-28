@@ -140,7 +140,7 @@ class _TeacherDashboardScreenState
                     final subject = subjects[index];
                     return _SubjectCard(
                       subject: subject,
-                      onTap: () => context.goNamed(
+                      onTap: () => context.pushNamed(
                         'teacherSubject',
                         pathParameters: {
                           'subjectId': subject.id.toString(),
