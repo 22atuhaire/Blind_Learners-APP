@@ -130,7 +130,8 @@ class TtsService {
     }
 
     final defaultEngine = (await _tts.getDefaultEngine)?.toString();
-    final selectedEngine = _googleTtsInstalled ? _googleTtsEngineId : defaultEngine;
+    final selectedEngine =
+        _googleTtsInstalled ? _googleTtsEngineId : defaultEngine;
 
     _activeEngine = (selectedEngine == null || selectedEngine.isEmpty)
         ? (engines.isNotEmpty ? engines.first : null)

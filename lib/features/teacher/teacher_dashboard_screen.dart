@@ -109,10 +109,10 @@ class _TeacherDashboardScreenState
               ),
               data: (subjects) {
                 if (subjects.isEmpty) {
-                  return Center(
+                  return const Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
+                      children: [
                         Icon(
                           Icons.library_books_outlined,
                           size: 64,

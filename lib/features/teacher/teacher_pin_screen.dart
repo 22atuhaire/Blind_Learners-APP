@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:drift/drift.dart' show Value;
+import 'package:url_launcher/url_launcher.dart';
 import 'package:audioapp/shared/services/providers.dart';
 import 'package:audioapp/shared/services/db/app_database.dart';
 // PinService is accessed through pinServiceProvider; no direct import needed.
@@ -80,6 +82,52 @@ class _TeacherPinScreenState extends ConsumerState<TeacherPinScreen> {
       _usingGoogleTts = tts.isUsingGoogleTts;
       _activeTtsEngine = tts.activeEngine;
     });
+  }
+
+  Future<void> _openTtsSettings() async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      // Open Android TTS settings for voice pack download
+      const url =
+          'android-app://com.android.settings/settings/tts_default_settings';
+      final settingsUri = Uri.parse(url);
+      try {
+        if (await canLaunchUrl(settingsUri)) {
+          await launchUrl(
+            settingsUri,
+            mode: LaunchMode.externalApplication,
+          );
+        } else {
+          // Fallback: Open general TTS settings
+          const fallbackUrl = 'android-app://com.google.android.tts';
+          final fallbackUri = Uri.parse(fallbackUrl);
+          if (await canLaunchUrl(fallbackUri)) {
+            await launchUrl(
+              fallbackUri,
+              mode: LaunchMode.externalApplication,
+            );
+          } else if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Open Android sound settings to install or update the TTS voice pack.',
+                ),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Unable to open TTS settings on this device.',
+              ),
+            ),
+          );
+        }
+        debugPrint('Error opening TTS settings: $e');
+      }
+    }
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
@@ -342,6 +390,22 @@ class _TeacherPinScreenState extends ConsumerState<TeacherPinScreen> {
               style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568)),
             ),
           ],
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _openTtsSettings,
+              icon: const Icon(Icons.settings, size: 18),
+              label: const Text('Download Voice'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: hasPrimary
+                    ? const Color(0xFF2ECC71)
+                    : const Color(0xFFF39C12),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+            ),
+          ),
         ],
       ),
     );

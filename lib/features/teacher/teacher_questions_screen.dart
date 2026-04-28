@@ -669,7 +669,7 @@ class _TeacherQuestionsScreenState
                                   correctOption: Value(correctOption),
                                   explanation: Value(exCtrl.text.trim()),
                                   positionInLesson: Value(nextPosition),
-                                  source: Value('teacher'),
+                                  source: const Value('teacher'),
                                 ),
                               );
                               if (ctx.mounted) Navigator.pop(ctx);

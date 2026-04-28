@@ -127,17 +127,17 @@ class _TeacherUploadScreenState extends ConsumerState<TeacherUploadScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // ── Card header row ───────────────────────────────────────────
-            Row(
+            const Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.upload_file_rounded,
                   color: Color(0xFF1A56DB),
                   size: 32,
                 ),
-                const SizedBox(width: 16),
+                SizedBox(width: 16),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
+                  children: [
                     Text(
                       'Select a file',
                       style: TextStyle(fontSize: 14, color: Colors.grey),
@@ -459,7 +459,7 @@ class _TeacherUploadScreenState extends ConsumerState<TeacherUploadScreen> {
             correctOption: Value(q.correctOption),
             explanation: Value(q.explanation),
             positionInLesson: Value(i),
-            source: Value('ai'),
+            source: const Value('ai'),
           ),
         );
       }

@@ -51,10 +51,10 @@ class _TeacherSubjectScreenState extends ConsumerState<TeacherSubjectScreen> {
         ),
         data: (topics) {
           if (topics.isEmpty) {
-            return Center(
+            return const Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: const [
+                children: [
                   Icon(
                     Icons.list_alt_rounded,
                     size: 64,
