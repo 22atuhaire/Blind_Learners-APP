@@ -235,6 +235,10 @@ class StudentDao extends DatabaseAccessor<AppDatabase> with _$StudentDaoMixin {
   Future<Student?> getStudent() =>
       (select(studentsTable)..limit(1)).getSingleOrNull();
 
+    /// Retrieve a student by id.
+    Future<Student?> getStudentById(int id) =>
+      (select(studentsTable)..where((t) => t.id.equals(id))).getSingleOrNull();
+
   /// Update the hashed PIN for the given student.
   Future<bool> updateStudentPinHash(int id, String pinHash) async {
     final rowsAffected = await (update(studentsTable)

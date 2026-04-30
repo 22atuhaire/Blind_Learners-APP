@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:speech_to_text/speech_to_text.dart' as speech_to_text;
+
 /// Global Speech-to-Text service for the AudioApp platform.
 ///
 /// This is a clean abstraction layer that provides the full STT interface
@@ -25,15 +27,16 @@ class SttService {
   final StreamController<String> _wordsController =
       StreamController<String>.broadcast();
 
-  /// Active subscription created by [startListening]; cancelled by
-  /// [stopListening] or when the stream emits an empty string.
-  StreamSubscription<String>? _subscription;
+  final speech_to_text.SpeechToText _speech = speech_to_text.SpeechToText();
 
   // ──────────────────────────────────────────────────────────────
   // Internal state
   // ──────────────────────────────────────────────────────────────
 
   bool _isListening = false;
+  bool _isInitialized = false;
+  bool _isAvailable = false;
+  void Function()? _activeOnDone;
 
   // ──────────────────────────────────────────────────────────────
   // Public API — state
@@ -41,6 +44,9 @@ class SttService {
 
   /// Whether the service is currently in a listening session.
   bool get isListening => _isListening;
+
+  /// Whether the speech engine initialized successfully.
+  bool get isAvailable => _isAvailable;
 
   /// Raw word stream.
   ///
@@ -57,12 +63,27 @@ class SttService {
 
   /// Initialises the STT back-end.
   ///
-  /// Currently a stub that always returns `true` (ready).
-  /// When the real `speech_to_text` package is wired up, this method will
-  /// call `SpeechToText.initialize()` and return its result.
+  /// Returns `true` when speech recognition is available on this device.
   Future<bool> initialize() async {
-    // Stub — replace body with real initialisation in Phase 2.
-    return true;
+    if (_isInitialized) return _isAvailable;
+
+    try {
+      _isAvailable = await _speech.initialize(
+        onStatus: (status) {
+          if (status == 'done' || status == 'notListening') {
+            _finishListeningSession();
+          }
+        },
+        onError: (error) {
+            _finishListeningSession();
+        },
+      );
+    } catch (_) {
+      _isAvailable = false;
+    }
+
+    _isInitialized = true;
+    return _isAvailable;
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -79,34 +100,30 @@ class SttService {
     required void Function(String words) onResult,
     void Function()? onDone,
   }) {
-    if (_isListening) return;
+    if (_isListening || !_isAvailable) return;
 
     _isListening = true;
+    _activeOnDone = onDone;
 
-    _subscription = _wordsController.stream.listen(
-      (words) {
-        if (words.isEmpty) {
-          // Empty string is the end-of-speech sentinel.
-          _isListening = false;
-          _subscription?.cancel();
-          _subscription = null;
-          onDone?.call();
-        } else {
+    _speech.listen(
+      onResult: (result) {
+        final words = result.recognizedWords.trim();
+        if (words.isNotEmpty) {
           onResult(words);
+          if (!_wordsController.isClosed) {
+            _wordsController.add(words);
+          }
+        }
+
+        if (result.finalResult) {
+          _finishListeningSession();
         }
       },
-      onError: (_) {
-        // Absorb stream errors so they never propagate uncaught to the UI.
-        _isListening = false;
-        _subscription?.cancel();
-        _subscription = null;
-      },
-      onDone: () {
-        // Stream was closed (e.g. dispose was called mid-session).
-        _isListening = false;
-        _subscription = null;
-      },
+      listenFor: const Duration(seconds: 4),
+      pauseFor: const Duration(seconds: 1),
+      partialResults: true,
       cancelOnError: true,
+      listenMode: speech_to_text.ListenMode.confirmation,
     );
   }
 
@@ -115,8 +132,11 @@ class SttService {
   /// Safe to call even when not listening.
   Future<void> stopListening() async {
     _isListening = false;
-    await _subscription?.cancel();
-    _subscription = null;
+    _activeOnDone = null;
+
+    if (_isAvailable) {
+      await _speech.stop();
+    }
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -146,8 +166,23 @@ class SttService {
   /// Must be called when the owning Riverpod scope or widget is destroyed.
   Future<void> dispose() async {
     _isListening = false;
-    await _subscription?.cancel();
-    _subscription = null;
+    _activeOnDone = null;
+    if (_isAvailable) {
+      await _speech.stop();
+    }
     await _wordsController.close();
+  }
+
+  void _finishListeningSession() {
+    if (!_isListening) return;
+
+    _isListening = false;
+    if (!_wordsController.isClosed) {
+      _wordsController.add('');
+    }
+
+    final callback = _activeOnDone;
+    _activeOnDone = null;
+    callback?.call();
   }
 }
