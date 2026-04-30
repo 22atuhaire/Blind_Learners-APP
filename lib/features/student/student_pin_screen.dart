@@ -556,9 +556,8 @@ class _StudentPinScreenState extends ConsumerState<StudentPinScreen>
               AnimatedBuilder(
                 animation: _pulseController,
                 builder: (context, child) {
-                  final pulse = _listening
-                      ? 1.0 + (_pulseController.value * 0.08)
-                      : 1.0;
+                  final pulse =
+                      _listening ? 1.0 + (_pulseController.value * 0.08) : 1.0;
                   final glow = _listening
                       ? 0.45 + (_pulseController.value * 0.35)
                       : 0.25;

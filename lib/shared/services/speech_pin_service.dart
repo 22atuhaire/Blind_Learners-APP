@@ -49,7 +49,8 @@ class SpeechPinService {
       }
     }
 
-    await _stt.listen(onResult: resultHandler, listenFor: Duration(seconds: timeoutSeconds));
+    await _stt.listen(
+        onResult: resultHandler, listenFor: Duration(seconds: timeoutSeconds));
 
     timeout = Timer(Duration(seconds: timeoutSeconds + 1), () {
       if (!completer.isCompleted) {
@@ -94,7 +95,11 @@ class SpeechPinService {
     };
 
     // Some transcribers output multiple words; pick the last plausible token.
-    final tokens = t.split(RegExp(r'\s+')).map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    final tokens = t
+        .split(RegExp(r'\s+'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
     for (var i = tokens.length - 1; i >= 0; i--) {
       final tok = tokens[i];
       if (map.containsKey(tok)) return map[tok];

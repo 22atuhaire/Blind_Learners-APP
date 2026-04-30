@@ -27,7 +27,8 @@ class _PinEnrollPageState extends State<PinEnrollPage> {
     await _speech.speak('Create a four digit PIN. I will ask for each digit.');
     final first = await _collectFourDigits();
     if (first == null) {
-      await _speech.speak('I could not capture your PIN. Enrollment cancelled.');
+      await _speech
+          .speak('I could not capture your PIN. Enrollment cancelled.');
       setState(() => _busy = false);
       return;
     }
@@ -35,7 +36,8 @@ class _PinEnrollPageState extends State<PinEnrollPage> {
     await _speech.speak('Please repeat the full four digit PIN now.');
     final second = await _collectFourDigits();
     if (second == null) {
-      await _speech.speak('I could not capture your repeated PIN. Enrollment cancelled.');
+      await _speech.speak(
+          'I could not capture your repeated PIN. Enrollment cancelled.');
       setState(() => _busy = false);
       return;
     }
@@ -122,7 +124,8 @@ class _PinLoginPageState extends State<PinLoginPage> {
     if (ok) {
       await _speech.speak('PIN accepted. Opening learning page.');
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const LearningPage()));
+      Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const LearningPage()));
     } else {
       _attempts++;
       await _speech.speak('Incorrect PIN.');
@@ -152,12 +155,15 @@ class _PinLoginPageState extends State<PinLoginPage> {
       appBar: AppBar(title: const Text('PIN Login')),
       body: Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          ElevatedButton(onPressed: _busy ? null : _login, child: Text(_busy ? 'Working…' : 'Login (speak)')),
+          ElevatedButton(
+              onPressed: _busy ? null : _login,
+              child: Text(_busy ? 'Working…' : 'Login (speak)')),
           const SizedBox(height: 12),
           ElevatedButton(
             onPressed: () async {
               final has = await _auth.hasPin();
-              await _speech.speak(has ? 'An account is present.' : 'No account found.');
+              await _speech
+                  .speak(has ? 'An account is present.' : 'No account found.');
             },
             child: const Text('Check account'),
           ),
