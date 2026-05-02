@@ -12,46 +12,49 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        context.go('/role');
-      }
-    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: Color(0xFFEBF2FF),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.headphones_rounded,
-              size: 80,
-              color: Color(0xFF1A56DB),
-            ),
-            SizedBox(height: 24),
-            Text(
-              'Audio Learning Platform',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          context.go('/role');
+        }
+      },
+      child: const Scaffold(
+        backgroundColor: Color(0xFFEBF2FF),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.headphones_rounded,
+                size: 80,
                 color: Color(0xFF1A56DB),
               ),
-            ),
-            SizedBox(height: 12),
-            Text(
-              'For visually impaired students in Uganda',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 16,
-                color: Color(0xFF4A5568),
+              SizedBox(height: 24),
+              Text(
+                'Audio Learning Platform',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1A56DB),
+                ),
               ),
-            ),
-          ],
+              SizedBox(height: 12),
+              Text(
+                'For visually impaired students in Uganda',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Color(0xFF4A5568),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

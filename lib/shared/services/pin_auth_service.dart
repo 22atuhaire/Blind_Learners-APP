@@ -29,7 +29,8 @@ class PinAuthService {
   Future<void> savePin(String pin) async {
     final salt = _generateSalt();
     final hash = _hashPin(pin, salt, _iterations);
-    final payload = jsonEncode({'salt': salt, 'hash': hash, 'iters': _iterations});
+    final payload =
+        jsonEncode({'salt': salt, 'hash': hash, 'iters': _iterations});
     await _secureStorage.write(key: _storageKey, value: payload);
   }
 

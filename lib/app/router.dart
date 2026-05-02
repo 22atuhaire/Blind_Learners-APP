@@ -15,7 +15,7 @@ import '../features/student/student_quiz_screen.dart';
 
 final routerProvider = Provider<GoRouter>(
   (ref) => GoRouter(
-    initialLocation: '/',
+    initialLocation: '/role',
     debugLogDiagnostics: false,
     routes: [
       GoRoute(
