@@ -1,9 +1,7 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:drift/drift.dart' show Value;
-import 'package:url_launcher/url_launcher.dart';
 import 'package:audioapp/shared/services/providers.dart';
 import 'package:audioapp/shared/services/db/app_database.dart';
 // PinService is accessed through pinServiceProvider; no direct import needed.
@@ -37,18 +35,12 @@ class _TeacherPinScreenState extends ConsumerState<TeacherPinScreen> {
   String _createError = '';
   bool _saving = false;
 
-  bool _checkingVoice = true;
-  bool _googleTtsInstalled = false;
-  bool _usingGoogleTts = false;
-  String? _activeTtsEngine;
-
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
     _loadTeachers();
-    _loadVoiceStatus();
   }
 
   @override
@@ -69,55 +61,6 @@ class _TeacherPinScreenState extends ConsumerState<TeacherPinScreen> {
       _loading = false;
       _createMode = teachers.isEmpty;
     });
-  }
-
-  Future<void> _loadVoiceStatus() async {
-    final tts = ref.read(ttsServiceProvider);
-    await tts.initialize();
-
-    if (!mounted) return;
-    setState(() {
-      _checkingVoice = false;
-      _googleTtsInstalled = tts.isGoogleTtsInstalled;
-      _usingGoogleTts = tts.isUsingGoogleTts;
-      _activeTtsEngine = tts.activeEngine;
-    });
-  }
-
-  Future<void> _openTtsSettings() async {
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      try {
-        // Use simple intent:// URI to open Settings app
-        final uri = Uri.parse(
-          'intent://#Intent;action=android.intent.action.MAIN;package=com.android.settings;end',
-        );
-
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(
-            uri,
-            mode: LaunchMode.externalApplication,
-          );
-        } else {
-          _showVoiceDownloadInstructions();
-        }
-      } catch (e) {
-        debugPrint('Error opening settings: $e');
-        _showVoiceDownloadInstructions();
-      }
-    }
-  }
-
-  void _showVoiceDownloadInstructions() {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          duration: Duration(seconds: 6),
-          content: Text(
-            'Open Settings > Sound & Vibration > Text-to-speech to download voices.',
-          ),
-        ),
-      );
-    }
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
@@ -170,10 +113,6 @@ class _TeacherPinScreenState extends ConsumerState<TeacherPinScreen> {
             style: TextStyle(fontSize: 14, color: Colors.grey),
             textAlign: TextAlign.center,
           ),
-          if (_teachers.isEmpty) ...[
-            const SizedBox(height: 18),
-            _buildVoiceSetupCard(),
-          ],
           const SizedBox(height: 32),
 
           // Name field
@@ -302,105 +241,6 @@ class _TeacherPinScreenState extends ConsumerState<TeacherPinScreen> {
     );
   }
 
-  Widget _buildVoiceSetupCard() {
-    if (_checkingVoice) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFD6E4FF)),
-        ),
-        child: const Row(
-          children: [
-            SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Checking speech voice setup...',
-                style: TextStyle(fontSize: 13),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    final hasPrimary = _googleTtsInstalled && _usingGoogleTts;
-    final title = hasPrimary
-        ? 'Voice Ready: Google Neural TTS'
-        : 'Voice Fallback Ready: Android Built-in TTS';
-    final message = hasPrimary
-        ? 'Primary voice engine is active. Download the English voice pack once on WiFi, then it works offline for students.'
-        : 'Google TTS is not active, so the app automatically uses Android built-in TTS. Student experience and app flow remain unchanged.';
-    final hint = hasPrimary
-        ? 'No extra setup needed now.'
-        : 'For more natural speech, install Google Speech Services and download an English voice pack during first-time setup.';
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: hasPrimary ? const Color(0xFFEAFBF0) : const Color(0xFFFFF7E6),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: hasPrimary ? const Color(0xFF91D9A9) : const Color(0xFFF0C36D),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
-              color: Color(0xFF1A1A2E),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            message,
-            style: const TextStyle(fontSize: 13, color: Color(0xFF333333)),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            hint,
-            style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568)),
-          ),
-          if (_activeTtsEngine != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              'Active engine: $_activeTtsEngine',
-              style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568)),
-            ),
-          ],
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: _openTtsSettings,
-              icon: const Icon(Icons.settings, size: 18),
-              label: const Text('Download Voice'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: hasPrimary
-                    ? const Color(0xFF2ECC71)
-                    : const Color(0xFFF39C12),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 10),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _handleCreate() async {
     final name = _nameController.text.trim();
     final subject = _subjectController.text.trim();
@@ -488,7 +328,7 @@ class _TeacherPinScreenState extends ConsumerState<TeacherPinScreen> {
               Text(
                 'Tap your name to log in',
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.8),
+                  color: Colors.white.withValues(alpha: 0.8),
                   fontSize: 14,
                 ),
               ),
@@ -785,7 +625,7 @@ class _PinInputRowState extends State<_PinInputRow> {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 4,
                   ),
                 ],
