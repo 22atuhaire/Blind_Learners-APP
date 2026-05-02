@@ -139,7 +139,6 @@ class _RoleSelectionScreenState extends ConsumerState<RoleSelectionScreen> {
                         ),
                       ),
                       onPressed: () {
-                        _speak('Teacher selected. Please enter your PIN.');
                         context.push('/teacher/pin');
                       },
                     ),
