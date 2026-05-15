@@ -8,9 +8,7 @@ import '../features/teacher/teacher_dashboard_screen.dart';
 import '../features/teacher/teacher_subject_screen.dart';
 import '../features/teacher/teacher_upload_screen.dart';
 import '../features/teacher/teacher_questions_screen.dart';
-import '../features/student/student_pin_screen.dart';
-import '../features/student/student_home_screen.dart';
-import '../features/student/student_study_screen.dart';
+import '../features/student/student_learning_hub_screen.dart';
 import '../features/student/student_quiz_screen.dart';
 
 final routerProvider = Provider<GoRouter>(
@@ -67,22 +65,9 @@ final routerProvider = Provider<GoRouter>(
 
       // ── Student routes ────────────────────────────────────────────────────
       GoRoute(
-        name: 'studentPin',
-        path: '/student/pin',
-        builder: (context, state) => const StudentPinScreen(),
-      ),
-      GoRoute(
         name: 'studentHome',
         path: '/student/home',
-        builder: (context, state) => const StudentHomeScreen(),
-      ),
-      GoRoute(
-        name: 'studentStudy',
-        path: '/student/study/:topicId',
-        builder: (context, state) {
-          final topicId = state.pathParameters['topicId']!;
-          return StudentStudyScreen(topicId: topicId);
-        },
+        builder: (context, state) => const StudentLearningHubScreen(),
       ),
       GoRoute(
         name: 'studentQuiz',

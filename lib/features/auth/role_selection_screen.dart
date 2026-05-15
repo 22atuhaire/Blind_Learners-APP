@@ -21,8 +21,7 @@ class _RoleSelectionScreenState extends ConsumerState<RoleSelectionScreen> {
       await Future<void>.delayed(const Duration(milliseconds: 500));
       if (mounted) {
         _speak(
-          'Welcome to the Audio Learning Platform. '
-          'Are you a student or a teacher?',
+          'Welcome to audio learning platform, if you are a student click in the bottom zone',
         );
       }
     });
@@ -50,103 +49,131 @@ class _RoleSelectionScreenState extends ConsumerState<RoleSelectionScreen> {
       },
       child: Scaffold(
         backgroundColor: const Color(0xFFEBF2FF),
-        body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Icon(
-                  Icons.headphones_rounded,
-                  size: 80,
-                  color: Color(0xFF1A56DB),
-                ),
-                const SizedBox(height: 24),
-                const Text(
-                  'Audio Learning\nPlatform',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1A56DB),
-                    height: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Interactive audio learning for\nvisually impaired students in Uganda',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Color(0xFF4A5568),
-                    height: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 64),
-                Semantics(
-                  label: 'I am a Student. Tap to continue as a student.',
-                  button: true,
-                  child: SizedBox(
-                    height: 80,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1A56DB),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        elevation: 2,
+        body: Stack(
+          children: [
+            // ── Main content area with welcome message ───────────────────
+            SafeArea(
+              child: SizedBox.expand(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.headphones_rounded,
+                        size: 72,
+                        color: Color(0xFF1A56DB),
                       ),
-                      icon: const Icon(Icons.school_rounded, size: 28),
-                      label: const Text(
-                        'I am a Student',
+                      const SizedBox(height: 24),
+                      const Text(
+                        'Audio Learning\nPlatform',
+                        textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: 22,
+                          fontSize: 32,
                           fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      onPressed: () {
-                        _speak('Student selected. Opening the learner screen.');
-                        context.go('/student/home');
-                      },
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Semantics(
-                  label: 'I am a Teacher. Tap to continue as a teacher.',
-                  button: true,
-                  child: SizedBox(
-                    height: 80,
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF1A56DB),
-                        side: const BorderSide(
                           color: Color(0xFF1A56DB),
-                          width: 2,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                          height: 1.2,
                         ),
                       ),
-                      icon: const Icon(Icons.person_rounded, size: 28),
-                      label: const Text(
-                        'I am a Teacher',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            // ── Top-right Teacher Button ──────────────────────────────────
+            Positioned(
+              top: 16,
+              right: 16,
+              child: SafeArea(
+                child: Semantics(
+                  label: 'Teacher mode. Tap to continue as a teacher.',
+                  button: true,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF1A56DB),
+                      side: const BorderSide(
+                        color: Color(0xFF1A56DB),
+                        width: 2,
                       ),
-                      onPressed: () {
-                        context.push('/teacher/pin');
-                      },
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                    ),
+                    icon: const Icon(Icons.person_rounded, size: 20),
+                    label: const Text(
+                      'Teacher',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    onPressed: () {
+                      context.push('/teacher/pin');
+                    },
+                  ),
+                ),
+              ),
+            ),
+
+            // ── Clickable bottom zone for students ─────────────────────────
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: 200,
+              child: GestureDetector(
+                onTap: () {
+                  _speak('Student selected. Opening the learner screen.');
+                  context.go('/student/home');
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        const Color(0xFF1A56DB).withOpacity(0.1),
+                        const Color(0xFF1A56DB).withOpacity(0.25),
+                      ],
+                    ),
+                    border: const Border(
+                      top: BorderSide(
+                        color: Color(0xFF1A56DB),
+                        width: 3,
+                      ),
+                    ),
+                  ),
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.school_rounded,
+                          size: 40,
+                          color: Color(0xFF1A56DB),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Tap to Enter as Student',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1A56DB),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
