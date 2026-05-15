@@ -275,6 +275,10 @@ class SubjectDao extends DatabaseAccessor<AppDatabase> with _$SubjectDaoMixin {
             ..orderBy([(t) => OrderingTerm.asc(t.name)]))
           .get();
 
+  /// Return all subjects in the database, ordered alphabetically.
+  Future<List<Subject>> getAllSubjects() =>
+      (select(subjectsTable)..orderBy([(t) => OrderingTerm.asc(t.name)])).get();
+
   /// Delete the subject with the given [id] and return the number of rows deleted.
   Future<int> deleteSubject(int id) =>
       (delete(subjectsTable)..where((t) => t.id.equals(id))).go();

@@ -151,6 +151,15 @@ final teacherSubjectsProvider =
   return db.subjectDao.getSubjectsByTeacherId(teacher.id);
 });
 
+/// Returns all subjects in the database, ordered alphabetically.
+///
+/// This is the student-facing list used by the unified learning hub.
+final allSubjectsProvider =
+    FutureProvider.autoDispose<List<Subject>>((ref) async {
+  final db = ref.watch(appDatabaseProvider);
+  return db.subjectDao.getAllSubjects();
+});
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Topics for a subject  (family by subjectId)
 // ──────────────────────────────────────────────────────────────────────────────
