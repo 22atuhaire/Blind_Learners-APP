@@ -239,6 +239,12 @@ class StudentDao extends DatabaseAccessor<AppDatabase> with _$StudentDaoMixin {
   Future<Student?> getStudentById(int id) =>
       (select(studentsTable)..where((t) => t.id.equals(id))).getSingleOrNull();
 
+  /// Return every student stored on this device, oldest first. Used by
+  /// name-based login to match a spoken name against existing pupils.
+  Future<List<Student>> getAllStudents() =>
+      (select(studentsTable)..orderBy([(t) => OrderingTerm(expression: t.id)]))
+          .get();
+
   /// Update the hashed PIN for the given student.
   Future<bool> updateStudentPinHash(int id, String pinHash) async {
     final rowsAffected = await (update(studentsTable)
@@ -279,6 +285,13 @@ class SubjectDao extends DatabaseAccessor<AppDatabase> with _$SubjectDaoMixin {
   Future<List<Subject>> getAllSubjects() =>
       (select(subjectsTable)..orderBy([(t) => OrderingTerm.asc(t.name)])).get();
 
+  /// Return the subject with the given [id], or `null` if it doesn't exist.
+  /// Used by the backend bridge to resolve which cloud subject a local
+  /// upload belongs to.
+  Future<Subject?> getSubjectById(int id) =>
+      (select(subjectsTable)..where((t) => t.id.equals(id)))
+          .getSingleOrNull();
+
   /// Delete the subject with the given [id] and return the number of rows deleted.
   Future<int> deleteSubject(int id) =>
       (delete(subjectsTable)..where((t) => t.id.equals(id))).go();
@@ -302,6 +315,12 @@ class TopicDao extends DatabaseAccessor<AppDatabase> with _$TopicDaoMixin {
             ..where((t) => t.subjectId.equals(subjectId))
             ..orderBy([(t) => OrderingTerm.asc(t.orderIndex)]))
           .get();
+
+  /// Return the topic with the given [id], or `null` if it doesn't exist.
+  /// Used by the backend bridge to resolve a lesson's parent subject when
+  /// syncing an upload to the cloud AI pipeline.
+  Future<Topic?> getTopicById(int id) =>
+      (select(topicsTable)..where((t) => t.id.equals(id))).getSingleOrNull();
 
   /// Update the ordering index of a single topic.
   Future<bool> updateTopicOrder(int id, int orderIndex) async {
@@ -402,6 +421,12 @@ class ProgressDao extends DatabaseAccessor<AppDatabase>
                   t.lessonId.equals(lessonId) & t.studentId.equals(studentId),
             ))
           .getSingleOrNull();
+
+  /// Every progress row for [studentId] — the basis for the progress summary
+  /// (which lessons are completed, when each was last accessed).
+  Future<List<Progress>> getProgressByStudentId(int studentId) =>
+      (select(progressTable)..where((t) => t.studentId.equals(studentId)))
+          .get();
 }
 
 // ------------------------------------------------------------------

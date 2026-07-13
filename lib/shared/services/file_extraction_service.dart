@@ -44,6 +44,8 @@ class FileExtractionService {
         return await extractFromPdf(filePath);
       } else if (lower.endsWith('.docx')) {
         return await extractFromDocx(filePath);
+      } else if (lower.endsWith('.txt')) {
+        return await extractFromTxt(filePath);
       }
       // Unsupported format — caller receives an empty string gracefully.
       return '';
@@ -265,6 +267,31 @@ class FileExtractionService {
       return text.trim();
     } catch (e, stack) {
       _logError('extractFromDocx', filePath, e, stack);
+      return '';
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // TXT extraction
+  // ──────────────────────────────────────────────────────────────
+
+  /// Reads a plain-text lesson file directly.
+  ///
+  /// Plain `.txt` notes are the simplest, most reliable path for teachers —
+  /// no binary parsing involved — which matters when the priority is getting
+  /// material in front of visually-impaired students quickly. Tries UTF-8
+  /// first and falls back to Latin-1 for files saved with a different legacy
+  /// encoding, so odd characters don't silently blank out the lesson.
+  Future<String> extractFromTxt(String filePath) async {
+    try {
+      final bytes = await File(filePath).readAsBytes();
+      try {
+        return utf8.decode(bytes).trim();
+      } on FormatException {
+        return latin1.decode(bytes).trim();
+      }
+    } catch (e, stack) {
+      _logError('extractFromTxt', filePath, e, stack);
       return '';
     }
   }

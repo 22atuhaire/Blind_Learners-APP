@@ -2,11 +2,8 @@ import 'dart:math';
 
 /// A single AI-generated multiple-choice question produced by [AiQuestionService].
 ///
-/// All four option fields are always populated — [optionD] is never null because
-/// this service always generates exactly four choices per question.
-///
-/// [correctOption] is one of `'A'`, `'B'`, `'C'`, or `'D'` after option
-/// shuffling, so callers must not assume it is always `'A'`.
+/// All four option fields are always populated. [correctOption] is one of
+/// 'A'..'D' after shuffling, so callers must not assume it is always 'A'.
 class AiGeneratedQuestion {
   const AiGeneratedQuestion({
     required this.questionText,
@@ -22,14 +19,8 @@ class AiGeneratedQuestion {
   final String optionA;
   final String optionB;
   final String optionC;
-
-  /// Always populated — this service always produces four distinct options.
   final String optionD;
-
-  /// The letter (`'A'`–`'D'`) of the correct option after shuffling.
   final String correctOption;
-
-  /// A short explanation referencing the lesson text.
   final String explanation;
 
   @override
@@ -37,239 +28,442 @@ class AiGeneratedQuestion {
       'AiGeneratedQuestion(q: "$questionText", correct: $correctOption)';
 }
 
-/// Generates multiple-choice quiz questions from lesson text without any
-/// internet connection or ML model.
+/// Offline fallback quiz generator, used only when a lesson has no
+/// server-authored (teacher-reviewed) questions — e.g. notes created while
+/// offline. Mirrors the backend generator: short, audio-friendly definition and
+/// fill-in-the-blank questions with length-matched distractors. Deterministic:
+/// the same lesson text always yields the same questions.
 ///
-/// Uses a two-pass rule-based approach:
-///
-/// **Pattern A** — structural extraction
-/// When a sentence contains a linking verb (`is / are / was / were`), the
-/// subject and predicate are split out to form a well-structured question such
-/// as *"What is photosynthesis?"*.
-///
-/// **Pattern B** — comprehension fallback
-/// For sentences that do not match Pattern A, a "which statement is correct?"
-/// question is generated using the sentence itself as the correct option and
-/// three other lesson sentences as distractors.
-///
-/// Results are reproducible: the same lesson text always produces the same
-/// questions in the same order (the internal [Random] is seeded from
-/// [String.hashCode] of the input text).
-///
-/// Usage:
-/// ```
-/// final service = AiQuestionService();
-/// final questions = service.generateQuestions(lessonText);
-/// for (final q in questions) {
-///   print(q.questionText);
-/// }
-/// ```
+/// Field-tested against real P.6 notes (structured with "Label:" lines,
+/// worked examples, and rule lists), which produced questions like
+/// "What is Since 6?" and "What are Key terms: Addends?". The pipeline now
+/// understands note STRUCTURE before extracting anything:
+///  - label lines ("Key terms:", "Rules for divisibility:") never merge into
+///    the sentence that follows them;
+///  - worked examples / arithmetic / imperative activity lines are excluded;
+///  - subjects led by subordinators or participles ("Since…", "Following…")
+///    and conditional rules ("X is Y IF Z") are never treated as definitions;
+///  - options are cut on phrase boundaries with balanced parentheses.
 class AiQuestionService {
-  // ──────────────────────────────────────────────────────────────
-  // Constants
-  // ──────────────────────────────────────────────────────────────
+  static const int _maxQuestions = 5;
 
-  /// Minimum word count a sentence must have to be considered for a question.
-  static const int _minWords = 8;
+  static final RegExp _sentenceSplitter = RegExp(r'(?<=[.!?])\s+|\n+');
+  static final RegExp _whitespace = RegExp(r'\s+');
 
-  /// Maximum number of questions to generate per lesson.
-  static const int _maxQuestions = 10;
+  static const List<String> _linkingVerbs = [' is ', ' are ', ' was ', ' were '];
 
-  /// Sentence-boundary patterns used to split the lesson text.
-  static final RegExp _sentenceSplitter = RegExp(r'\. |\.\n|\? |! ');
+  static const Set<String> _pronounSubjects = {
+    'it', 'this', 'that', 'these', 'those', 'they', 'there',
+    'he', 'she', 'we', 'you', 'i', 'here', 'its', 'their',
+    'his', 'her', 'such', 'one', 'some', 'many', 'most',
+  };
 
-  /// Linking verbs that trigger Pattern A question generation.
-  static const List<String> _linkingVerbs = [
-    ' is ',
-    ' are ',
-    ' was ',
-    ' were ',
-  ];
+  // Question words / conjunctions that must never be a definition subject --
+  // otherwise a question or heading like "Why is food important?" becomes the
+  // nonsense question "What is Why?".
+  static const Set<String> _interrogatives = {
+    'why', 'what', 'how', 'when', 'where', 'who', 'whom', 'whose',
+    'which', 'whether', 'if', 'because', 'although', 'though',
+  };
 
-  // ──────────────────────────────────────────────────────────────
-  // Public API
-  // ──────────────────────────────────────────────────────────────
+  // Subordinators / participles / discourse words that begin a clause, not a
+  // thing being defined. "Since 6 is 5 or more, round up" must never become
+  // "What is Since 6?".
+  static const Set<String> _clauseLeadIns = {
+    'since', 'while', 'after', 'before', 'unless', 'until', 'during',
+    'once', 'following', 'using', 'according', 'considering', 'given',
+    'then', 'also', 'therefore', 'thus', 'hence', 'so', 'first', 'second',
+    'next', 'finally', 'note', 'remember', 'example', 'answer',
+  };
 
-  /// Generates up to [_maxQuestions] MCQ questions from [lessonText].
-  ///
-  /// Returns an empty list when [lessonText] is blank or when fewer than four
-  /// distinct sentences can be extracted (which makes it impossible to produce
-  /// three unique wrong answers for any question).
+  // Imperative openers of worked examples and activities ("Write 35,000 in
+  // words.", "Round 89,365 to the nearest 100."). Instructions to the reader
+  // are not teachable statements — they make nonsense questions and clozes.
+  static const Set<String> _imperativeStarts = {
+    'write', 'work', 'round', 'find', 'use', 'complete', 'test', 'check',
+    'add', 'subtract', 'multiply', 'divide', 'arrange', 'look', 'break',
+    'read', 'solve', 'calculate', 'draw', 'list', 'name', 'state', 'fill',
+    'copy', 'answer', 'practice', 'practise', 'keep',
+  };
+
+  static const Set<String> _stopwords = {
+    'the', 'a', 'an', 'and', 'or', 'but', 'of', 'to', 'in', 'on', 'at',
+    'for', 'with', 'as', 'by', 'from', 'is', 'are', 'was', 'were', 'be',
+    'been', 'being', 'it', 'its', 'this', 'that', 'these', 'those', 'they',
+    'them', 'their', 'there', 'here', 'about', 'into', 'over', 'between',
+    'which', 'who', 'what', 'when', 'where', 'why', 'how', 'than', 'then',
+    'have', 'has', 'had', 'does', 'will', 'would', 'should', 'could',
+    'you', 'your', 'we', 'our', 'he', 'she', 'must', 'may', 'can',
+  };
+
+  // Quantity words that make poor cloze answers/distractors on their own.
+  static const Set<String> _numberWords = {
+    'hundred', 'thousand', 'million', 'billion', 'dozen', 'twenty',
+    'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety',
+  };
+
+  /// Generates up to [_maxQuestions] MCQs from [lessonText]. Empty when the
+  /// text is blank or has too few usable sentences.
   List<AiGeneratedQuestion> generateQuestions(String lessonText) {
     if (lessonText.trim().isEmpty) return [];
 
-    // ── 1. Tokenise into sentences ────────────────────────────────────────
-    final sentences = lessonText
-        .split(_sentenceSplitter)
-        .map((s) => s.trim())
-        .where(_hasEnoughWords)
-        .toList();
+    final sentences = _usableSentences(lessonText);
+    if (sentences.length < 2) return [];
 
-    // Need at least 4 sentences: 1 correct + 3 wrong-answer candidates.
-    if (sentences.length < 4) return [];
-
-    // ── 2. Shuffle deterministically based on the lesson content ──────────
-    // Using lessonText.hashCode as the seed guarantees that the same text
-    // always yields the same question order, making results reproducible
-    // without persisting any extra state.
     final rng = Random(lessonText.hashCode);
-    final shuffled = List<String>.from(sentences)..shuffle(rng);
+    final keyTerms = _keyTerms(sentences);
 
-    // ── 3. Generate questions (try up to _maxQuestions sentences) ─────────
     final questions = <AiGeneratedQuestion>[];
+    final used = <String>{};
 
-    for (final sentence in shuffled) {
+    for (final s in sentences) {
       if (questions.length >= _maxQuestions) break;
+      if (used.contains(s)) continue;
+      final q = _definitionMcq(s, sentences, rng);
+      if (q != null) {
+        used.add(s);
+        questions.add(q);
+      }
+    }
 
-      // Prefer the richer Pattern A; fall back to Pattern B if it doesn't
-      // apply or if not enough wrong-answer candidates can be found.
-      final question = _tryPatternA(sentence, sentences, rng) ??
-          _patternB(sentence, sentences, rng);
-
-      if (question != null) questions.add(question);
+    for (final s in sentences) {
+      if (questions.length >= _maxQuestions) break;
+      if (used.contains(s)) continue;
+      final q = _clozeMcq(s, keyTerms, rng);
+      if (q != null) {
+        used.add(s);
+        questions.add(q);
+      }
     }
 
     return questions;
   }
 
-  // ──────────────────────────────────────────────────────────────
-  // Pattern A — linking-verb extraction
-  // ──────────────────────────────────────────────────────────────
+  /// Structure-aware sentence extraction. Notes are not prose: they carry
+  /// heading/label lines, worked arithmetic, and activity instructions. Those
+  /// must be removed BEFORE sentence splitting, or they fuse with real
+  /// sentences ("Rules for divisibility: A number is divisible by 2…" made
+  /// the question "What is Rules for divisibility: A number?").
+  List<String> _usableSentences(String lessonText) {
+    final cleanedLines = <String>[];
+    for (var line in lessonText.split('\n')) {
+      line = line.trim();
+      if (line.isEmpty) continue;
+      // Decorative separators / vertical arithmetic ("---------", "+ 23,657").
+      if (!RegExp(r'[A-Za-z]').hasMatch(line)) continue;
+      // Label-only lines ("Key terms:", "Rules for rounding:", "BODMAS stands
+      // for:") introduce what follows; they are not statements.
+      if (line.endsWith(':')) continue;
+      // Strip short leading labels ("Example: …", "Answer: …", "Activity 3: …")
+      // so the sentence itself survives without the label fused on.
+      final labelMatch = RegExp(r'^([^.!?:]{1,32}):\s+').firstMatch(line);
+      if (labelMatch != null) {
+        line = line.substring(labelMatch.end).trim();
+        if (line.isEmpty) continue;
+      }
+      // Headings ("MATHEMATICS NOTES FOR PRIMARY SIX") are titles, not
+      // teachable sentences — mostly-uppercase lines are dropped so they can
+      // never become fill-in-the-blank questions.
+      final upper = RegExp(r'[A-Z]').allMatches(line).length;
+      final lower = RegExp(r'[a-z]').allMatches(line).length;
+      if (upper + lower >= 3 && upper > 2 * lower) continue;
+      cleanedLines.add(line);
+    }
 
-  /// Attempts to build a Pattern A question from [sentence].
-  ///
-  /// Returns `null` when:
-  ///   - no linking verb is found in [sentence]
-  ///   - the split yields an empty subject or predicate
-  ///   - fewer than three distinct wrong-answer candidates can be collected
-  AiGeneratedQuestion? _tryPatternA(
-    String sentence,
-    List<String> allSentences,
-    Random rng,
-  ) {
-    // Find the first linking verb present in the sentence.
-    String? foundVerb;
-    for (final verb in _linkingVerbs) {
-      if (sentence.contains(verb)) {
-        foundVerb = verb;
+    return cleanedLines
+        .join('\n')
+        .split(_sentenceSplitter)
+        .map((s) => s.trim())
+        .where((s) {
+      final words = s.split(_whitespace).where((w) => w.isNotEmpty).toList();
+      if (words.length < 5 || words.length > 40) return false;
+      // Worked arithmetic is practice, not teachable prose.
+      if (s.contains('=')) return false;
+      // Mostly digits → a calculation or data row, not a statement.
+      final digits = RegExp(r'[0-9]').allMatches(s).length;
+      final letters = RegExp(r'[A-Za-z]').allMatches(s).length;
+      if (digits > 0 && digits * 2 >= letters) return false;
+      // Instructions to the reader ("Round 89,365 to the nearest 100.").
+      final first = words.first.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '');
+      if (_imperativeStarts.contains(first)) return false;
+      return true;
+    }).toList();
+  }
+
+  AiGeneratedQuestion? _definitionMcq(
+      String sentence, List<String> all, Random rng) {
+    String? verb;
+    for (final v in _linkingVerbs) {
+      if (sentence.contains(v)) {
+        verb = v;
         break;
       }
     }
-    if (foundVerb == null) return null;
+    if (verb == null) return null;
 
-    final splitIdx = sentence.indexOf(foundVerb);
-    final subject = _truncate(sentence.substring(0, splitIdx).trim(), 60);
-    final predicate =
-        _truncate(sentence.substring(splitIdx + foundVerb.length).trim(), 100);
+    final idx = sentence.indexOf(verb);
+    final subject = sentence.substring(0, idx).trim();
+    final rawPredicate =
+        _stripTrailingDot(sentence.substring(idx + verb.length));
 
-    if (subject.isEmpty || predicate.isEmpty) return null;
+    // A question ("Why is food important?") is not a definition.
+    if (sentence.trim().endsWith('?')) return null;
 
-    // ── Collect wrong-answer candidates ────────────────────────────────────
-    // Priority 1: predicates extracted from other Pattern A sentences.
-    final wrongCandidates = <String>[];
+    // "X is Y if/when/unless Z" is a RULE, not a definition — "A number is
+    // divisible by 2 if its last digit is even" does not define "a number".
+    final predLow = ' ${rawPredicate.toLowerCase()} ';
+    if (predLow.contains(' if ') ||
+        predLow.contains(' when ') ||
+        predLow.contains(' unless ')) {
+      return null;
+    }
 
-    for (final other in allSentences) {
-      if (other == sentence) continue;
-      for (final verb in _linkingVerbs) {
-        if (other.contains(verb)) {
-          final otherIdx = other.indexOf(verb);
-          final otherPredicate = _truncate(
-            other.substring(otherIdx + verb.length).trim(),
-            80,
-          );
-          if (otherPredicate.isNotEmpty &&
-              otherPredicate != predicate &&
-              !wrongCandidates.contains(otherPredicate)) {
-            wrongCandidates.add(otherPredicate);
-          }
-          break; // Only process the first linking verb per sentence.
+    // A subject with a comma or colon is a clause or a fused label, never a
+    // clean term ("Following BODMAS, addition and subtraction…").
+    if (subject.contains(',') || subject.contains(':')) return null;
+
+    final subjWords =
+        subject.split(_whitespace).where((w) => w.isNotEmpty).toList();
+    if (subjWords.isEmpty || subjWords.length > 6) return null;
+    final firstWord =
+        subjWords.first.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '');
+    if (_pronounSubjects.contains(firstWord) ||
+        _interrogatives.contains(firstWord) ||
+        _clauseLeadIns.contains(firstWord)) {
+      return null;
+    }
+    // The subject must contain a real content word, not be made only of
+    // stopwords / question words / numbers.
+    final hasContentWord = subjWords.any((w) {
+      final t = w.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '');
+      return t.length >= 3 &&
+          !_stopwords.contains(t) &&
+          !_interrogatives.contains(t);
+    });
+    if (!hasContentWord) return null;
+
+    final correct = _shortPhrase(rawPredicate, 12);
+    if (!_isSpeakableOption(correct)) return null;
+
+    final distractors =
+        _pickLengthMatched(correct, _predicatePool(sentence, all), 3, rng);
+    if (distractors.length < 3) return null;
+
+    return _assemble(
+      questionText: 'What ${verb.trim()} ${_shortPhrase(subject, 8)}?',
+      correct: correct,
+      wrongs: distractors,
+      explanation: 'From your lesson: ${_truncate(sentence, 200)}',
+      rng: rng,
+    );
+  }
+
+  /// Distractor candidates: cleaned predicates of the OTHER sentences.
+  /// Conditional rules are welcome here — clause-cutting turns "divisible by
+  /// 2 if its last digit is even" into the short phrase "divisible by 2",
+  /// which is a plausible, honest same-note distractor.
+  List<String> _predicatePool(String exclude, List<String> all) {
+    final candidates = <String>[];
+    for (final other in all) {
+      if (other == exclude) continue;
+      // A question sentence ("How many litres were left?") has no predicate
+      // worth borrowing — its tail is not a statement.
+      if (other.trim().endsWith('?')) continue;
+      String? ov;
+      for (final v in _linkingVerbs) {
+        if (other.contains(v)) {
+          ov = v;
+          break;
+        }
+      }
+      if (ov == null) continue;
+      final op = _shortPhrase(
+          _stripTrailingDot(other.substring(other.indexOf(ov) + ov.length)),
+          12);
+      if (_isSpeakableOption(op)) candidates.add(op);
+    }
+    return _dedupe(candidates);
+  }
+
+  AiGeneratedQuestion? _clozeMcq(
+      String sentence, List<String> keyTerms, Random rng) {
+    if (sentence.trim().endsWith('?')) return null;
+    final present = keyTerms
+        .where((t) => RegExp('\\b${RegExp.escape(t)}\\b', caseSensitive: false)
+            .hasMatch(sentence))
+        .toList();
+    if (present.isEmpty) return null;
+
+    present.sort((a, b) => b.length.compareTo(a.length));
+    final answer = present.first;
+
+    final blanked = sentence.replaceFirst(
+        RegExp('\\b${RegExp.escape(answer)}\\b', caseSensitive: false), 'blank');
+    if (!blanked.toLowerCase().contains('blank')) return null;
+
+    final others =
+        keyTerms.where((t) => t.toLowerCase() != answer.toLowerCase()).toList();
+    final distractors = _pickLengthMatched(answer, _dedupe(others), 3, rng);
+    if (distractors.length < 3) return null;
+
+    return _assemble(
+      questionText: 'Fill in the blank. ${_truncate(blanked, 180)}',
+      correct: answer,
+      wrongs: distractors,
+      explanation: 'From your lesson: ${_truncate(sentence, 200)}',
+      rng: rng,
+    );
+  }
+
+  /// Heuristic key terms (no NLP on device): capitalised words/sequences plus
+  /// longer content words, used as cloze answers and distractors.
+  List<String> _keyTerms(List<String> sentences) {
+    final terms = <String>[];
+    final seen = <String>{};
+    final capSeq =
+        RegExp(r'\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,2})\b');
+
+    bool usable(String lowerKey) =>
+        !_stopwords.contains(lowerKey) &&
+        !_numberWords.contains(lowerKey) &&
+        !_clauseLeadIns.contains(lowerKey);
+
+    for (final s in sentences) {
+      for (final m in capSeq.allMatches(s)) {
+        var t = m.group(1)!.trim();
+        // "In Primary Six" is one capitalised run, but "In" is not part of
+        // the term — drop leading stopwords so the real term ("Primary Six")
+        // survives instead of the whole run being used or discarded.
+        var words = t.split(' ');
+        while (words.isNotEmpty &&
+            (_stopwords.contains(words.first.toLowerCase()) ||
+                _clauseLeadIns.contains(words.first.toLowerCase()))) {
+          words = words.sublist(1);
+        }
+        if (words.isEmpty) continue;
+        t = words.join(' ');
+        final key = t.toLowerCase();
+        if (t.length >= 3 && usable(key) && seen.add(key)) {
+          terms.add(t);
         }
       }
     }
-
-    // Priority 2: fill any remaining slots with whole other sentences
-    // (truncated), which still sound plausible as distractors.
-    for (final other in allSentences) {
-      if (wrongCandidates.length >= 3) break;
-      if (other == sentence) continue;
-      final truncated = _truncate(other, 80);
-      if (truncated != predicate && !wrongCandidates.contains(truncated)) {
-        wrongCandidates.add(truncated);
+    for (final s in sentences) {
+      for (final w in s.split(RegExp(r'[^A-Za-z]+'))) {
+        final key = w.toLowerCase();
+        if (w.length >= 6 && usable(key) && seen.add(key)) {
+          terms.add(w);
+        }
       }
     }
-
-    if (wrongCandidates.length < 3) return null;
-
-    wrongCandidates.shuffle(rng);
-
-    final questionText = 'What ${foundVerb.trim()} $subject?';
-    return _shuffleOptions(
-      questionText: questionText,
-      correct: predicate,
-      wrongs: wrongCandidates.sublist(0, 3),
-      rng: rng,
-    );
+    return terms;
   }
 
-  // ──────────────────────────────────────────────────────────────
-  // Pattern B — comprehension fallback
-  // ──────────────────────────────────────────────────────────────
+  static const List<String> _clauseBreaks = [
+    '; ', ' which ', ' that ', ' where ',
+    ' because ', ' so that ', ' in order ', ' such as ',
+    ' if ', ' when ', ' unless ',
+  ];
 
-  /// Builds a "which statement is correct?" question using [sentence] as the
-  /// correct option and three other lesson sentences as distractors.
-  ///
-  /// Returns `null` when fewer than three other sentences are available.
-  AiGeneratedQuestion? _patternB(
-    String sentence,
-    List<String> allSentences,
-    Random rng,
-  ) {
-    final correct = _truncate(sentence, 120);
-
-    final others = allSentences
-        .where((s) => s != sentence && s.trim().isNotEmpty)
-        .map((s) => _truncate(s, 120))
-        .toList()
-      ..shuffle(rng);
-
-    if (others.length < 3) return null;
-
-    return _shuffleOptions(
-      questionText: 'According to the lesson, which statement is correct?',
-      correct: correct,
-      wrongs: [others[0], others[1], others[2]],
-      rng: rng,
-    );
+  String _shortPhrase(String text, int maxWords) {
+    var t = _stripTrailingDot(text).trim();
+    final low = t.toLowerCase();
+    var cut = t.length;
+    for (final sep in _clauseBreaks) {
+      final i = low.indexOf(sep);
+      // Only cut if at least 4 words precede the break, so we never reduce
+      // "the process by which plants make food" to "the process by".
+      if (i > 0 &&
+          i < cut &&
+          t.substring(0, i).split(_whitespace).length >= 4) {
+        cut = i;
+      }
+    }
+    // Commas cut earlier (2 words is enough): "the minuend, the number
+    // subtracted is…" must stop at "the minuend".
+    final commaIdx = t.indexOf(', ');
+    if (commaIdx > 0 &&
+        commaIdx < cut &&
+        t.substring(0, commaIdx).split(_whitespace).length >= 2) {
+      cut = commaIdx;
+    }
+    t = t.substring(0, cut).trim();
+    final words = t.split(_whitespace);
+    if (words.length > maxWords) t = words.take(maxWords).join(' ');
+    return _balanceParens(t);
   }
 
-  // ──────────────────────────────────────────────────────────────
-  // Option shuffling
-  // ──────────────────────────────────────────────────────────────
+  /// Never let a phrase end with a dangling parenthesis: an option read as
+  /// "divisible by 2 if its last digit is even (0" is broken on screen and
+  /// worse by ear. An unmatched "(" cuts the phrase before it; an unmatched
+  /// ")" is dropped.
+  String _balanceParens(String t) {
+    final open = t.indexOf('(');
+    if (open >= 0 && !t.substring(open).contains(')')) {
+      t = t.substring(0, open);
+    }
+    if (t.contains(')') && !t.contains('(')) {
+      t = t.replaceAll(')', ' ');
+    }
+    return t
+        .replaceAll(_whitespace, ' ')
+        .replaceAll(RegExp(r'[\s,;:\-]+$'), '')
+        .trim();
+  }
 
-  /// Randomly distributes [correct] and [wrongs] across options A–D so that
-  /// the correct answer is not always option A.
-  ///
-  /// Updates [correctOption] accordingly and populates [explanation] with a
-  /// brief reference to the lesson text.
-  AiGeneratedQuestion _shuffleOptions({
+  /// True when the phrase contains at least one alphabetic word of 3+
+  /// letters — "12 and 14" is not a speakable answer.
+  bool _hasRealWord(String t) =>
+      RegExp(r'[A-Za-z]{3,}').hasMatch(t.replaceAll(RegExp(r'\band\b'), ''));
+
+  /// A quiz option must read as one clean phrase by ear. Rejects fragments
+  /// the clause-cutter could not repair: leftover commas ("2, so yes" from a
+  /// worked example), digit-led answers, and phrases ending on a dangling
+  /// stopword ("…and its total value is").
+  bool _isSpeakableOption(String t) {
+    if (t.length < 3 || !_hasRealWord(t)) return false;
+    if (t.contains(',')) return false;
+    if (RegExp(r'^[0-9]').hasMatch(t)) return false;
+    final words = t.split(_whitespace);
+    final last = words.last.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '');
+    if (_stopwords.contains(last)) return false;
+    return true;
+  }
+
+  List<String> _pickLengthMatched(
+      String correct, List<String> candidates, int n, Random rng) {
+    final target = correct.split(_whitespace).length;
+    final pool = candidates
+        .where((c) => c.toLowerCase().trim() != correct.toLowerCase().trim())
+        .toList();
+    pool.shuffle(rng);
+    pool.sort((a, b) => (a.split(_whitespace).length - target)
+        .abs()
+        .compareTo((b.split(_whitespace).length - target).abs()));
+    return pool.take(n).toList();
+  }
+
+  List<String> _dedupe(List<String> items) {
+    final seen = <String>{};
+    final out = <String>[];
+    for (final it in items) {
+      final key = it.toLowerCase().trim();
+      if (key.isNotEmpty && seen.add(key)) out.add(it.trim());
+    }
+    return out;
+  }
+
+  AiGeneratedQuestion _assemble({
     required String questionText,
     required String correct,
     required List<String> wrongs,
+    required String explanation,
     required Random rng,
   }) {
-    assert(
-        wrongs.length == 3, '_shuffleOptions requires exactly 3 wrong answers');
-
-    // Build a mutable list: [correct, wrong0, wrong1, wrong2]
     final options = [correct, wrongs[0], wrongs[1], wrongs[2]];
-
-    // Shuffle so the correct answer lands on a random position each time.
     options.shuffle(rng);
-
-    // Locate where the correct answer ended up.
     final correctIndex = options.indexOf(correct);
     final correctLetter = const ['A', 'B', 'C', 'D'][correctIndex];
-
     return AiGeneratedQuestion(
       questionText: questionText,
       optionA: options[0],
@@ -277,29 +471,20 @@ class AiQuestionService {
       optionC: options[2],
       optionD: options[3],
       correctOption: correctLetter,
-      explanation: 'According to the lesson: $correct',
+      explanation: explanation,
     );
   }
 
-  // ──────────────────────────────────────────────────────────────
-  // Utility helpers
-  // ──────────────────────────────────────────────────────────────
+  String _stripTrailingDot(String text) {
+    var t = text.trim();
+    while (t.endsWith('.')) {
+      t = t.substring(0, t.length - 1).trim();
+    }
+    return t;
+  }
 
-  /// Returns [text] unchanged when it is within [maxLength] characters, or
-  /// the first [maxLength] characters otherwise.
   String _truncate(String text, int maxLength) {
     if (text.length <= maxLength) return text;
     return text.substring(0, maxLength);
-  }
-
-  /// Returns `true` when [sentence] contains at least [_minWords] words.
-  ///
-  /// Splitting on any whitespace run avoids false negatives caused by
-  /// multiple consecutive spaces or tabs in the source document.
-  bool _hasEnoughWords(String sentence) {
-    if (sentence.isEmpty) return false;
-    final wordCount =
-        sentence.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
-    return wordCount >= _minWords;
   }
 }

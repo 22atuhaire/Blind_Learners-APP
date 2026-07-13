@@ -74,7 +74,7 @@ class _TeacherQuestionsScreenState
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1A56DB).withOpacity(0.08),
+                      color: const Color(0xFF1A56DB).withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Text(
@@ -141,7 +141,7 @@ class _TeacherQuestionsScreenState
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: badgeColor.withOpacity(0.1),
+                color: badgeColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
@@ -229,7 +229,7 @@ class _TeacherQuestionsScreenState
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          color: const Color(0xFF1A56DB).withOpacity(0.3),
+          color: const Color(0xFF1A56DB).withValues(alpha: 0.3),
           width: 1.5,
         ),
       ),
@@ -258,7 +258,7 @@ class _TeacherQuestionsScreenState
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: isCorrect
-            ? const Color(0xFF16A34A).withOpacity(0.08)
+            ? const Color(0xFF16A34A).withValues(alpha: 0.08)
             : Colors.grey.shade50,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(

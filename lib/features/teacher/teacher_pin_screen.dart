@@ -2,13 +2,32 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:drift/drift.dart' show Value;
+import 'package:audioapp/shared/services/backend_api_service.dart';
 import 'package:audioapp/shared/services/providers.dart';
 import 'package:audioapp/shared/services/db/app_database.dart';
-// PinService is accessed through pinServiceProvider; no direct import needed.
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Teacher PIN Screen
+// Teacher Access — ONE account, identified by email + password.
+//
+// A teacher creates a single account (name, subject, email, password). That
+// registers the cloud account + their class on the backend and writes an
+// on-device cache row; signing in on any device restores everything. There is
+// no separate device PIN and no separate "connect your class" step — the local
+// database is simply a cache of the one cloud account. "Stay signed in" keeps
+// them in until they sign out from the dashboard.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Client-side password check mirroring the backend policy, so a teacher sees
+/// the rule before a network round-trip: at least 6 characters with a letter
+/// and a number (no special characters required).
+String? validateTeacherPassword(String password) {
+  if (password.length < 6) return 'Use a password of at least 6 characters.';
+  if (!RegExp(r'[A-Za-z]').hasMatch(password) ||
+      !RegExp(r'\d').hasMatch(password)) {
+    return 'Password must include at least one letter and one number.';
+  }
+  return null;
+}
 
 class TeacherPinScreen extends ConsumerStatefulWidget {
   const TeacherPinScreen({super.key});
@@ -18,650 +37,460 @@ class TeacherPinScreen extends ConsumerStatefulWidget {
 }
 
 class _TeacherPinScreenState extends ConsumerState<TeacherPinScreen> {
-  // ── State ──────────────────────────────────────────────────────────────────
+  static const _baseUrl = kDefaultBackendBaseUrl;
 
-  List<Teacher> _teachers = [];
-  bool _loading = true;
-  bool _createMode = false;
-  Teacher? _selectedTeacher;
-  String _loginPin = '';
-  String _loginError = '';
+  bool _loading = true; // checking for an existing signed-in session
+  bool _signInMode = false; // false = create account, true = sign in
+  bool _busy = false;
+  String _error = '';
 
-  // Create form
   final _nameController = TextEditingController();
+  final _classController = TextEditingController();
   final _subjectController = TextEditingController();
-  String _createPin = '';
-  String _confirmPin = '';
-  String _createError = '';
-  bool _saving = false;
-
-  // ── Lifecycle ──────────────────────────────────────────────────────────────
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _loadTeachers();
+    _restoreSession();
   }
 
   @override
   void dispose() {
     _nameController.dispose();
+    _classController.dispose();
     _subjectController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
-  // ── Data ───────────────────────────────────────────────────────────────────
-
-  Future<void> _loadTeachers() async {
+  /// "Stay signed in": if a teacher signed in on this device before, go
+  /// straight to the dashboard; otherwise show the form.
+  Future<void> _restoreSession() async {
+    final link = ref.read(backendLinkServiceProvider);
     final db = ref.read(appDatabaseProvider);
-    final teachers = await db.teacherDao.getAllTeachers();
+    final id = await link.getSignedInTeacherId();
+    if (id != null) {
+      final teacher = await db.teacherDao.getTeacherById(id);
+      if (teacher != null) {
+        if (!mounted) return;
+        ref.read(currentTeacherProvider.notifier).state = teacher;
+        context.go('/teacher/dashboard');
+        return;
+      }
+      await link.clearSignedInTeacher(); // stale id — forget it
+    }
+    if (mounted) setState(() => _loading = false);
+  }
+
+  void _fail(String message) {
     if (!mounted) return;
     setState(() {
-      _teachers = teachers;
-      _loading = false;
-      _createMode = teachers.isEmpty;
+      _busy = false;
+      _error = message;
     });
   }
 
-  // ── Build ──────────────────────────────────────────────────────────────────
+  Future<void> _handleCreate() async {
+    final name = _nameController.text.trim();
+    final className = _classController.text.trim();
+    final subject = _subjectController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
+    if (name.isEmpty) return _fail('Enter your full name.');
+    if (className.isEmpty) return _fail('Enter your class name.');
+    if (subject.isEmpty) return _fail('Enter the subject you teach.');
+    if (!email.contains('@') || email.length < 5) {
+      return _fail('Enter a valid email.');
+    }
+    final pwError = validateTeacherPassword(password);
+    if (pwError != null) return _fail(pwError);
+
+    setState(() {
+      _busy = true;
+      _error = '';
+    });
+    try {
+      final db = ref.read(appDatabaseProvider);
+      final link = ref.read(backendLinkServiceProvider);
+      final now = DateTime.now().millisecondsSinceEpoch;
+
+      // On-device cache row (no PIN in the unified model).
+      final teacherId = await db.teacherDao.insertTeacher(
+        TeachersTableCompanion(
+          name: Value(name),
+          pinHash: const Value(''),
+          subjectName: Value(subject),
+          createdAt: Value(now),
+        ),
+      );
+      await db.subjectDao.insertSubject(
+        SubjectsTableCompanion(
+          teacherId: Value(teacherId),
+          name: Value(subject),
+          createdAt: Value(now),
+        ),
+      );
+
+      // Create the cloud account (class teacher) + class + sharable codes,
+      // and the subject they teach inside that class.
+      await link.linkTeacherAccount(
+        localTeacherId: teacherId,
+        baseUrl: _baseUrl,
+        fullName: name,
+        email: email,
+        password: password,
+        subjectName: subject,
+        className: className,
+      );
+      await link.setSignedInTeacher(teacherId);
+
+      final teacher = await db.teacherDao.getTeacherById(teacherId);
+      if (!mounted) return;
+      ref.read(currentTeacherProvider.notifier).state = teacher;
+      ref.invalidate(teacherSubjectsProvider);
+      if (teacher != null) await showTeacherLinkDialog(context, teacher);
+      if (mounted) context.go('/teacher/dashboard');
+    } on BackendApiException catch (e) {
+      _fail('${e.message} If you already have an account, switch to Sign in.');
+    } catch (_) {
+      _fail('Could not reach the server. Check your connection and try again.');
+    }
+  }
+
+  Future<void> _handleSignIn() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    if (!email.contains('@') || email.length < 5) {
+      return _fail('Enter your account email.');
+    }
+    if (password.isEmpty) return _fail('Enter your password.');
+
+    setState(() {
+      _busy = true;
+      _error = '';
+    });
+    try {
+      final db = ref.read(appDatabaseProvider);
+      final link = ref.read(backendLinkServiceProvider);
+      final teacher = await link.loginAndRestoreTeacher(
+        db: db,
+        baseUrl: _baseUrl,
+        email: email,
+        password: password,
+      );
+      await link.setSignedInTeacher(teacher.id);
+      if (!mounted) return;
+      ref.read(currentTeacherProvider.notifier).state = teacher;
+      ref.invalidate(teacherSubjectsProvider);
+      context.go('/teacher/dashboard');
+    } on BackendApiException catch (e) {
+      _fail(e.message);
+    } catch (_) {
+      _fail('Could not reach the server. Check your connection and try again.');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(
+        backgroundColor: Color(0xFFEBF2FF),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     return Scaffold(
       backgroundColor: const Color(0xFFEBF2FF),
       appBar: AppBar(
         title: const Text('Teacher Access'),
         backgroundColor: const Color(0xFF1A56DB),
         foregroundColor: Colors.white,
-        automaticallyImplyLeading: !(_createMode && _teachers.isEmpty),
         elevation: 0,
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _createMode
-              ? _buildCreateForm()
-              : _buildLoginList(),
-    );
-  }
-
-  // ── Create Form ────────────────────────────────────────────────────────────
-
-  Widget _buildCreateForm() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          const Icon(
-            Icons.person_add_rounded,
-            size: 64,
-            color: Color(0xFF1A56DB),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'Set Up Teacher Profile',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF1A56DB),
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Create your profile to upload lessons',
-            style: TextStyle(fontSize: 14, color: Colors.grey),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 32),
-
-          // Name field
-          TextField(
-            controller: _nameController,
-            decoration: InputDecoration(
-              labelText: 'Your full name',
-              prefixIcon: const Icon(Icons.person_outline),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              filled: true,
-              fillColor: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Subject field
-          TextField(
-            controller: _subjectController,
-            decoration: InputDecoration(
-              labelText: 'Subject (e.g. Biology)',
-              prefixIcon: const Icon(Icons.book_outlined),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              filled: true,
-              fillColor: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Create PIN
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Create your 4-digit PIN',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1A1A2E),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          _PinInputRow(
-            onChanged: (pin) => setState(() => _createPin = pin),
-          ),
-          const SizedBox(height: 20),
-
-          // Confirm PIN
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Confirm PIN',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1A1A2E),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          _PinInputRow(
-            onChanged: (pin) => setState(() => _confirmPin = pin),
-          ),
-          const SizedBox(height: 8),
-
-          // Error text
-          if (_createError.isNotEmpty)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                _createError,
-                style: const TextStyle(
-                  color: Color(0xFFDC2626),
-                  fontSize: 13,
-                ),
-              ),
-            ),
-          const SizedBox(height: 24),
-
-          // Create button
-          SizedBox(
-            width: double.infinity,
-            height: 56,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1A56DB),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 2,
-              ),
-              onPressed: _saving ? null : _handleCreate,
-              child: _saving
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text(
-                      'Create Profile',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-            ),
-          ),
-
-          // Back to login (only if teachers already exist)
-          if (_teachers.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _createMode = false;
-                  _createError = '';
-                });
-              },
-              child: const Text('Back to login'),
-            ),
-          ],
-
-          const SizedBox(height: 24),
-        ],
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: _signInMode ? _buildSignIn() : _buildCreate(),
       ),
     );
   }
 
-  Future<void> _handleCreate() async {
-    final name = _nameController.text.trim();
-    final subject = _subjectController.text.trim();
-
-    if (name.isEmpty) {
-      setState(() => _createError = 'Please enter your name.');
-      return;
-    }
-    if (subject.isEmpty) {
-      setState(() => _createError = 'Please enter a subject name.');
-      return;
-    }
-
-    final pinService = ref.read(pinServiceProvider);
-
-    if (!pinService.isValidPin(_createPin)) {
-      setState(() => _createError = 'PIN must be exactly 4 digits.');
-      return;
-    }
-    if (_createPin != _confirmPin) {
-      setState(() => _createError = 'PINs do not match.');
-      return;
-    }
-
-    setState(() {
-      _saving = true;
-      _createError = '';
-    });
-
-    try {
-      final db = ref.read(appDatabaseProvider);
-      final hash = pinService.hashPin(_createPin);
-
-      final teacherId = await db.teacherDao.insertTeacher(
-        TeachersTableCompanion(
-          name: Value(name),
-          pinHash: Value(hash),
-          subjectName: Value(subject),
-          createdAt: Value(DateTime.now().millisecondsSinceEpoch),
-        ),
-      );
-
-      await db.subjectDao.insertSubject(
-        SubjectsTableCompanion(
-          teacherId: Value(teacherId),
-          name: Value(subject),
-          createdAt: Value(DateTime.now().millisecondsSinceEpoch),
-        ),
-      );
-
-      final teacher = await db.teacherDao.getTeacherById(teacherId);
-      ref.read(currentTeacherProvider.notifier).state = teacher;
-
-      if (mounted) context.go('/teacher/dashboard');
-    } catch (e) {
-      setState(() {
-        _saving = false;
-        _createError = 'Error creating profile. Please try again.';
-      });
-    }
-  }
-
-  // ── Login List ─────────────────────────────────────────────────────────────
-
-  Widget _buildLoginList() {
+  Widget _buildCreate() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Header banner
-        Container(
-          color: const Color(0xFF1A56DB),
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Select Your Profile',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Tap your name to log in',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.8),
-                  fontSize: 14,
-                ),
-              ),
-            ],
-          ),
+        const Icon(Icons.person_add_rounded,
+            size: 56, color: Color(0xFF1A56DB)),
+        const SizedBox(height: 12),
+        const Text(
+          'Create your account',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF1A56DB)),
         ),
-
-        // Teacher list
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            itemCount: _teachers.length,
-            itemBuilder: (context, index) {
-              final teacher = _teachers[index];
-              return Card(
-                elevation: 2,
-                margin: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 6,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 4,
-                  ),
-                  leading: CircleAvatar(
-                    backgroundColor: const Color(0xFF1A56DB),
-                    child: Text(
-                      teacher.name[0].toUpperCase(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  title: Text(
-                    teacher.name,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  subtitle: Text(teacher.subjectName),
-                  trailing: const Icon(
-                    Icons.arrow_forward_ios,
-                    size: 16,
-                    color: Colors.grey,
-                  ),
-                  onTap: () {
-                    setState(() {
-                      _selectedTeacher = teacher;
-                      _loginPin = '';
-                      _loginError = '';
-                    });
-                    _showLoginBottomSheet(teacher);
-                  },
-                ),
-              );
-            },
-          ),
+        const SizedBox(height: 6),
+        const Text(
+          'Your email and password are your account — they back up your notes '
+          'and let students join your class.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 13, color: Colors.grey),
         ),
-
-        // Add new teacher button
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-          child: TextButton.icon(
-            onPressed: () => setState(() => _createMode = true),
-            icon: const Icon(Icons.add),
-            label: const Text('Add New Teacher'),
-          ),
+        const SizedBox(height: 24),
+        _field(_nameController, 'Your full name', Icons.person_outline),
+        const SizedBox(height: 14),
+        _field(_classController, 'Class name (e.g. Primary 5)',
+            Icons.groups_outlined),
+        const SizedBox(height: 14),
+        _field(_subjectController, 'Subject you teach (e.g. Biology)',
+            Icons.book_outlined),
+        const SizedBox(height: 14),
+        _field(_emailController, 'Email', Icons.email_outlined,
+            keyboard: TextInputType.emailAddress),
+        const SizedBox(height: 14),
+        _field(_passwordController, 'Password', Icons.lock_outline,
+            obscure: true,
+            helper: 'At least 6 characters, with a letter and a number.'),
+        if (_error.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(_error,
+              style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13)),
+        ],
+        const SizedBox(height: 24),
+        _primaryButton('Create account', _handleCreate),
+        const SizedBox(height: 10),
+        TextButton(
+          onPressed: _busy
+              ? null
+              : () => setState(() {
+                    _signInMode = true;
+                    _error = '';
+                  }),
+          child: const Text('Already have an account? Sign in'),
         ),
       ],
     );
   }
 
-  // ── Login Bottom Sheet ─────────────────────────────────────────────────────
-
-  void _showLoginBottomSheet(Teacher teacher) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        // Seed from parent state so a re-opened sheet starts clean, and the
-        // parent fields (_loginPin, _loginError) are meaningfully read.
-        String localPin = _loginPin;
-        String localError = _loginError;
-
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Padding(
-              // Push the sheet above the keyboard
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom,
-              ),
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Header row
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          teacher.name,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1A1A2E),
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.pop(ctx),
-                          icon: const Icon(Icons.close),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ],
-                    ),
-                    const Text(
-                      'Enter your 4-digit PIN',
-                      style: TextStyle(color: Colors.grey, fontSize: 14),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // PIN input — keyed so it resets when teacher changes
-                    _PinInputRow(
-                      key: ValueKey(teacher.id),
-                      onChanged: (pin) {
-                        localPin = pin;
-                        // Clear error as user types
-                        if (localError.isNotEmpty) {
-                          setModalState(() => localError = '');
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 8),
-
-                    // Inline error text
-                    if (localError.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Text(
-                          localError,
-                          style: const TextStyle(
-                            color: Color(0xFFDC2626),
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 16),
-
-                    // Login button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 52,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1A56DB),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: 2,
-                        ),
-                        onPressed: () => _handleLogin(
-                          loginPin: localPin,
-                          sheetContext: ctx,
-                          setError: (err) =>
-                              setModalState(() => localError = err),
-                        ),
-                        child: const Text(
-                          'Login',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+  Widget _buildSignIn() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Icon(Icons.login_rounded, size: 56, color: Color(0xFF1A56DB)),
+        const SizedBox(height: 12),
+        const Text(
+          'Sign in',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF1A56DB)),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Sign in with your email and password. Your notes are restored to '
+          'this device.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 13, color: Colors.grey),
+        ),
+        const SizedBox(height: 24),
+        _field(_emailController, 'Email', Icons.email_outlined,
+            keyboard: TextInputType.emailAddress),
+        const SizedBox(height: 14),
+        _field(_passwordController, 'Password', Icons.lock_outline,
+            obscure: true),
+        if (_error.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(_error,
+              style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13)),
+        ],
+        const SizedBox(height: 24),
+        _primaryButton('Sign in', _handleSignIn),
+        const SizedBox(height: 10),
+        TextButton(
+          onPressed: _busy
+              ? null
+              : () => setState(() {
+                    _signInMode = false;
+                    _error = '';
+                  }),
+          child: const Text('New here? Create an account'),
+        ),
+      ],
     );
   }
 
-  /// Verifies the entered PIN against the stored hash.
-  ///
-  /// Reads [_selectedTeacher] from parent state (set in the card's onTap
-  /// before the sheet opens). On success navigates to the dashboard; on
-  /// failure calls [setError] so the bottom sheet updates inline without
-  /// requiring the parent to rebuild.
-  Future<void> _handleLogin({
-    required String loginPin,
-    required BuildContext sheetContext,
-    required void Function(String) setError,
-  }) async {
-    // _selectedTeacher is the source of truth — read it here.
-    final teacher = _selectedTeacher;
-    if (teacher == null) return;
+  Widget _field(
+    TextEditingController controller,
+    String label,
+    IconData icon, {
+    bool obscure = false,
+    TextInputType? keyboard,
+    String? helper,
+  }) {
+    return TextField(
+      controller: controller,
+      obscureText: obscure,
+      keyboardType: keyboard,
+      textCapitalization:
+          (keyboard == TextInputType.emailAddress || obscure)
+              ? TextCapitalization.none
+              : TextCapitalization.words,
+      decoration: InputDecoration(
+        labelText: label,
+        helperText: helper,
+        helperMaxLines: 2,
+        prefixIcon: Icon(icon),
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
 
-    // Keep parent tracking fields in sync.
-    setState(() {
-      _loginPin = loginPin;
-      _loginError = '';
-    });
-
-    final pinService = ref.read(pinServiceProvider);
-
-    if (pinService.verifyPin(loginPin, teacher.pinHash)) {
-      ref.read(currentTeacherProvider.notifier).state = teacher;
-      if (mounted) {
-        Navigator.pop(sheetContext); // close bottom sheet
-        context.go('/teacher/dashboard');
-      }
-    } else {
-      const msg = 'Incorrect PIN. Please try again.';
-      setState(() {
-        _loginError = msg;
-        _loginPin = '';
-      });
-      setError(msg); // update the bottom sheet directly
-    }
+  Widget _primaryButton(String label, Future<void> Function() onPressed) {
+    return SizedBox(
+      height: 54,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF1A56DB),
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+        onPressed: _busy ? null : () => onPressed(),
+        child: _busy
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                    color: Colors.white, strokeWidth: 2))
+            : Text(label,
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+      ),
+    );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Private PIN Input Row Widget
+// Class code dialog — shows the codes a teacher shares so students (and other
+// teachers) can join their class. Opened right after sign-up and from the
+// dashboard. Account creation now happens on the main screen, so this no
+// longer asks for any credentials.
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _PinInputRow extends StatefulWidget {
-  final ValueChanged<String> onChanged;
-
-  const _PinInputRow({super.key, required this.onChanged});
-
-  @override
-  State<_PinInputRow> createState() => _PinInputRowState();
+Future<void> showTeacherLinkDialog(BuildContext context, Teacher teacher) {
+  return showDialog<void>(
+    context: context,
+    builder: (_) => _ClassCodeDialog(teacher: teacher),
+  );
 }
 
-class _PinInputRowState extends State<_PinInputRow> {
-  final _controller = TextEditingController();
-  final _focusNode = FocusNode();
+class _ClassCodeDialog extends ConsumerStatefulWidget {
+  final Teacher teacher;
+  const _ClassCodeDialog({required this.teacher});
+
+  @override
+  ConsumerState<_ClassCodeDialog> createState() => _ClassCodeDialogState();
+}
+
+class _ClassCodeDialogState extends ConsumerState<_ClassCodeDialog> {
+  bool _loading = true;
+  String? _teacherCode;
+  String? _studentCode;
 
   @override
   void initState() {
     super.initState();
-    // Rebuild when focus changes so the active-cell border animates correctly.
-    _focusNode.addListener(_onFocusChange);
+    _load();
   }
 
-  void _onFocusChange() {
-    if (mounted) setState(() {});
-  }
-
-  @override
-  void dispose() {
-    _focusNode.removeListener(_onFocusChange);
-    _controller.dispose();
-    _focusNode.dispose();
-    super.dispose();
+  Future<void> _load() async {
+    final info =
+        await ref.read(backendLinkServiceProvider).getTeacherLink(widget.teacher.id);
+    if (!mounted) return;
+    setState(() {
+      _teacherCode = info?.teacherCode;
+      _studentCode = info?.studentCode;
+      _loading = false;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => _focusNode.requestFocus(),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // ── Four visible PIN cells ─────────────────────────────────────
-          ...List.generate(4, (i) {
-            final filled = i < _controller.text.length;
-            final isActive =
-                i == _controller.text.length && _focusNode.hasFocus;
-
-            return Container(
-              width: 56,
-              height: 68,
-              margin: const EdgeInsets.symmetric(horizontal: 6),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color:
-                      isActive ? const Color(0xFF1A56DB) : Colors.grey.shade300,
-                  width: isActive ? 2 : 1.5,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 4,
-                  ),
+    final hasCodes = _studentCode != null || _teacherCode != null;
+    return AlertDialog(
+      title: const Text('Your class codes'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: _loading
+            ? const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (hasCodes) ...[
+                    const Text('Share these so others can join your class.',
+                        style: TextStyle(fontSize: 13)),
+                    const SizedBox(height: 14),
+                    if (_studentCode != null)
+                      _codeTile('Student code', _studentCode!,
+                          'Give this to your students.'),
+                    if (_studentCode != null && _teacherCode != null)
+                      const SizedBox(height: 10),
+                    if (_teacherCode != null)
+                      _codeTile('Teacher code', _teacherCode!,
+                          'For another teacher joining your class.'),
+                  ] else
+                    const Text(
+                      'Your class codes aren\'t saved on this device. Open the '
+                      'device where you created the class to view them.',
+                      style: TextStyle(fontSize: 13),
+                    ),
                 ],
               ),
-              child: Center(
-                child: filled
-                    ? Container(
-                        width: 14,
-                        height: 14,
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Color(0xFF1A56DB),
-                        ),
-                      )
-                    : null,
-              ),
-            );
-          }),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
 
-          // ── Hidden text field that captures keyboard input ─────────────
-          SizedBox(
-            width: 0,
-            height: 0,
-            child: TextField(
-              controller: _controller,
-              focusNode: _focusNode,
-              keyboardType: TextInputType.number,
-              maxLength: 4,
-              obscureText: true,
-              decoration: const InputDecoration(counterText: ''),
-              onChanged: (val) {
-                setState(() {});
-                widget.onChanged(val);
-              },
-            ),
-          ),
+  Widget _codeTile(String label, String code, String hint) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A56DB).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label,
+              style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Text(code,
+              style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF123B7A),
+                  letterSpacing: 1.2)),
+          const SizedBox(height: 4),
+          Text(hint,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
         ],
       ),
     );

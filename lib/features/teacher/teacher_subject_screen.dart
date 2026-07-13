@@ -110,62 +110,30 @@ class _TeacherSubjectScreenState extends ConsumerState<TeacherSubjectScreen> {
 
   // ── Add Topic Dialog ───────────────────────────────────────────────────────
 
-  void _showAddTopicDialog(int subjectId) {
-    final controller = TextEditingController();
-
-    showDialog(
+  Future<void> _showAddTopicDialog(int subjectId) async {
+    // The dialog owns its TextEditingController (via _AddTopicDialog's State),
+    // so the controller is disposed by the framework at exactly the right
+    // point in the route lifecycle — never from a `.then` callback that can
+    // fire mid-transition (the source of the '_dependents.isEmpty' crash and
+    // "controller used after dispose").
+    final created = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('New Topic'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            labelText: 'Topic name',
-            hintText: 'e.g. Chapter 3: Cell Structure',
-          ),
-          autofocus: true,
-          textCapitalization: TextCapitalization.sentences,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1A56DB),
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () async {
-              final name = controller.text.trim();
-              if (name.isEmpty) return;
+      builder: (_) => _AddTopicDialog(subjectId: subjectId),
+    );
 
-              final db = ref.read(appDatabaseProvider);
-              final topics = await db.topicDao.getTopicsBySubjectId(subjectId);
-
-              await db.topicDao.insertTopic(
-                TopicsTableCompanion(
-                  subjectId: Value(subjectId),
-                  name: Value(name),
-                  orderIndex: Value(topics.length),
-                  createdAt: Value(DateTime.now().millisecondsSinceEpoch),
-                ),
-              );
-
-              ref.invalidate(subjectTopicsProvider(subjectId));
-              if (ctx.mounted) Navigator.pop(ctx);
-            },
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    ).then((_) => controller.dispose());
+    // Only refresh the list if a topic was actually added, and only while this
+    // screen is still mounted — invalidating a provider after the State has
+    // been disposed (e.g. the teacher navigated away) is what trips Flutter's
+    // framework assertions here.
+    if (created == true && mounted) {
+      ref.invalidate(subjectTopicsProvider(subjectId));
+    }
   }
 
   // ── Confirm Delete Topic Dialog ────────────────────────────────────────────
 
-  void _confirmDeleteTopic(Topic topic) {
-    showDialog(
+  Future<void> _confirmDeleteTopic(Topic topic) async {
+    final deleted = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Topic'),
@@ -175,7 +143,7 @@ class _TeacherSubjectScreenState extends ConsumerState<TeacherSubjectScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
@@ -186,13 +154,105 @@ class _TeacherSubjectScreenState extends ConsumerState<TeacherSubjectScreen> {
             onPressed: () async {
               final db = ref.read(appDatabaseProvider);
               await db.topicDao.deleteTopic(topic.id);
-              ref.invalidate(subjectTopicsProvider(_subjectId));
-              if (ctx.mounted) Navigator.pop(ctx);
+              if (ctx.mounted) Navigator.pop(ctx, true);
             },
             child: const Text('Delete'),
           ),
         ],
       ),
+    );
+
+    if (deleted == true && mounted) {
+      ref.invalidate(subjectTopicsProvider(_subjectId));
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Add Topic Dialog
+//
+// A self-contained StatefulWidget so its TextEditingController is created and
+// disposed by the framework alongside the dialog route. Pops with `true` when
+// a topic is added, `false`/`null` otherwise, so the caller knows whether to
+// refresh — and never has to dispose a controller from outside the route.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _AddTopicDialog extends ConsumerStatefulWidget {
+  final int subjectId;
+  const _AddTopicDialog({required this.subjectId});
+
+  @override
+  ConsumerState<_AddTopicDialog> createState() => _AddTopicDialogState();
+}
+
+class _AddTopicDialogState extends ConsumerState<_AddTopicDialog> {
+  final TextEditingController _controller = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final name = _controller.text.trim();
+    if (name.isEmpty || _saving) return;
+
+    setState(() => _saving = true);
+
+    final db = ref.read(appDatabaseProvider);
+    final topics = await db.topicDao.getTopicsBySubjectId(widget.subjectId);
+    await db.topicDao.insertTopic(
+      TopicsTableCompanion(
+        subjectId: Value(widget.subjectId),
+        name: Value(name),
+        orderIndex: Value(topics.length),
+        createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+
+    if (mounted) Navigator.pop(context, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('New Topic'),
+      content: TextField(
+        controller: _controller,
+        decoration: const InputDecoration(
+          labelText: 'Topic name',
+          hintText: 'e.g. Chapter 3: Cell Structure',
+        ),
+        autofocus: true,
+        textCapitalization: TextCapitalization.sentences,
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed:
+              _saving ? null : () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF1A56DB),
+            foregroundColor: Colors.white,
+          ),
+          onPressed: _saving ? null : _submit,
+          child: _saving
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text('Add'),
+        ),
+      ],
     );
   }
 }
@@ -243,7 +303,7 @@ class _TopicTile extends StatelessWidget {
               height: 44,
               decoration: BoxDecoration(
                 color: hasLesson
-                    ? const Color(0xFF16A34A).withOpacity(0.1)
+                    ? const Color(0xFF16A34A).withValues(alpha: 0.1)
                     : Colors.grey.shade100,
                 borderRadius: BorderRadius.circular(10),
               ),

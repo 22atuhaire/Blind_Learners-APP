@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:audioapp/shared/services/providers.dart';
 import 'package:audioapp/shared/services/db/app_database.dart';
+import 'package:audioapp/features/teacher/teacher_pin_screen.dart' show showTeacherLinkDialog;
 // PinService is accessed through pinServiceProvider; no direct import needed.
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -48,6 +49,16 @@ class _TeacherDashboardScreenState
         elevation: 0,
         actions: [
           IconButton(
+            icon: const Icon(Icons.group_add_rounded),
+            tooltip: 'Connect your class',
+            onPressed: () => showTeacherLinkDialog(context, teacher),
+          ),
+          IconButton(
+            icon: const Icon(Icons.bar_chart_rounded),
+            tooltip: 'Class progress',
+            onPressed: () => context.push('/teacher/progress'),
+          ),
+          IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Log out',
             onPressed: _showLogoutDialog,
@@ -64,7 +75,7 @@ class _TeacherDashboardScreenState
             child: Row(
               children: [
                 CircleAvatar(
-                  backgroundColor: Colors.white.withOpacity(0.25),
+                  backgroundColor: Colors.white.withValues(alpha: 0.25),
                   radius: 24,
                   child: Text(
                     teacher.name[0].toUpperCase(),
@@ -243,10 +254,13 @@ class _TeacherDashboardScreenState
               backgroundColor: Colors.red,
               foregroundColor: Colors.white,
             ),
-            onPressed: () {
+            onPressed: () async {
+              // Clear the "stay signed in" session so the next launch shows
+              // the sign-in screen instead of jumping back to the dashboard.
+              await ref.read(backendLinkServiceProvider).clearSignedInTeacher();
               ref.read(currentTeacherProvider.notifier).state = null;
-              Navigator.pop(ctx);
-              context.go('/role');
+              if (ctx.mounted) Navigator.pop(ctx);
+              if (mounted) context.go('/role');
             },
             child: const Text('Log Out'),
           ),
@@ -283,7 +297,7 @@ class _SubjectCard extends StatelessWidget {
           width: 48,
           height: 48,
           decoration: BoxDecoration(
-            color: const Color(0xFF1A56DB).withOpacity(0.1),
+            color: const Color(0xFF1A56DB).withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(10),
           ),
           child: const Icon(
