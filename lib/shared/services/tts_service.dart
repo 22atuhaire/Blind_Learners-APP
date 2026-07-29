@@ -263,8 +263,11 @@ class TtsService {
 
   /// Stops any current speech, then speaks [text].
   ///
-  /// Fire-and-forget variant — returns as soon as playback starts.
-  /// Use [speakAndWait] if you need to know when the utterance finishes.
+  /// NOTE: because [initialize] enables `awaitSpeakCompletion(true)` (required
+  /// for gapless segment playback), the returned future now resolves when the
+  /// utterance has FINISHED, not when it starts. Callers that must not block
+  /// should not await it. [speakAndWait] remains the API to use when you need
+  /// the completion result (`true` = spoken to the end, `false` = interrupted).
   Future<void> speak(String text) async {
     if (text.trim().isEmpty) return;
     final myGeneration = ++_generation;

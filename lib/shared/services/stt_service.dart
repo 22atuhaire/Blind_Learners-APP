@@ -18,6 +18,7 @@ class SttService {
   bool _isInitialized = false;
   bool _isAvailable = false;
   void Function()? _activeOnDone;
+  void Function(String message)? _activeOnError;
 
   /// Whether the service is currently in a listening session.
   bool get isListening => _isListening;
@@ -37,7 +38,12 @@ class SttService {
           }
         },
         onError: (error) {
-          _finishListeningSession();
+          // Surface the reason so callers can tell an ENGINE failure (busy,
+          // client error, no network) from genuine silence. On low-end phones
+          // these errors are common and need a different response: wait a beat
+          // and retry the microphone, rather than immediately re-speaking the
+          // whole prompt — which is what made the name prompt loop endlessly.
+          _finishListeningSession(error: error.errorMsg);
         },
       );
     } catch (_) {
@@ -53,21 +59,29 @@ class SttService {
   /// [onResult]  - called ONCE with the complete, FINAL recognised phrase.
   /// [onPartial] - optional; called with each in-flight partial fragment.
   /// [onDone]    - called once when the session ends with nothing recognised.
+  /// [onError]   - optional; called instead of [onDone] when the ENGINE failed
+  ///               (busy, client error, no network), with the engine's message.
+  ///               Omit it to keep the old behaviour of treating errors as
+  ///               "nothing heard".
   /// [onDevice]  - prefer an installed on-device model (offline). Default false.
   ///
-  /// Calling [startListening] while already listening is a no-op.
-  void startListening({
+  /// Returns `false` when the session could not be started (engine unavailable,
+  /// or one is already running) so a caller can fall back instead of waiting
+  /// for callbacks that will never arrive.
+  bool startListening({
     required void Function(String words) onResult,
     void Function(String words)? onPartial,
     void Function()? onDone,
+    void Function(String message)? onError,
     Duration listenFor = const Duration(seconds: 30),
     Duration pauseFor = const Duration(seconds: 8),
     bool onDevice = false,
   }) {
-    if (_isListening || !_isAvailable) return;
+    if (_isListening || !_isAvailable) return false;
 
     _isListening = true;
     _activeOnDone = onDone;
+    _activeOnError = onError;
     var deliveredFinal = false;
 
     _speech.listen(
@@ -77,9 +91,11 @@ class SttService {
         if (result.finalResult) {
           if (words.isNotEmpty && !deliveredFinal) {
             deliveredFinal = true;
-            // Final result delivered -> this session ends successfully, so the
-            // "nothing heard" callback must not fire afterwards.
+            // Final result delivered -> this session ends successfully, so
+            // neither the "nothing heard" nor the error callback may fire
+            // afterwards (some engines emit a trailing error after a result).
             _activeOnDone = null;
+            _activeOnError = null;
             onResult(words);
           }
           _finishListeningSession();
@@ -104,12 +120,14 @@ class SttService {
         onDevice: onDevice,
       ),
     );
+    return true;
   }
 
   /// Ends the current listening session. Safe to call even when not listening.
   Future<void> stopListening() async {
     _isListening = false;
     _activeOnDone = null;
+    _activeOnError = null;
     if (_isAvailable) {
       await _speech.stop();
     }
@@ -119,18 +137,31 @@ class SttService {
   Future<void> dispose() async {
     _isListening = false;
     _activeOnDone = null;
+    _activeOnError = null;
     if (_isAvailable) {
       await _speech.stop();
     }
   }
 
-  void _finishListeningSession() {
+  /// Ends the active session exactly once, routing to [_activeOnError] when the
+  /// engine failed and a caller asked for errors, otherwise to [_activeOnDone].
+  ///
+  /// Callers that don't pass an `onError` keep the previous behaviour — an
+  /// engine error still arrives as "done" — so existing screens are unaffected.
+  void _finishListeningSession({String? error}) {
     if (!_isListening) return;
 
     _isListening = false;
 
-    final callback = _activeOnDone;
+    final onDone = _activeOnDone;
+    final onError = _activeOnError;
     _activeOnDone = null;
-    callback?.call();
+    _activeOnError = null;
+
+    if (error != null && onError != null) {
+      onError(error);
+    } else {
+      onDone?.call();
+    }
   }
 }

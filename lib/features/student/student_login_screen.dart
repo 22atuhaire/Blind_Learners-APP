@@ -5,6 +5,7 @@ import 'package:audioapp/shared/services/providers.dart';
 import 'package:audioapp/shared/services/stt_service.dart';
 import 'package:audioapp/shared/services/tts_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // HapticFeedback / SystemSound cue
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -29,7 +30,29 @@ class _StudentLoginScreenState extends ConsumerState<StudentLoginScreen> {
   bool _addingNew = false;
   final TextEditingController _nameController = TextEditingController();
   int _session = 0;
-  int _voiceAttempts = 0; // bound voice retries; then fall back to buttons
+
+  // ── Voice budgets ────────────────────────────────────────────────────────
+  // Name capture and yes/no confirmation get SEPARATE budgets. They used to
+  // share one counter, so a pupil who needed a few goes to be heard had almost
+  // none left to confirm, and the screen gave up on voice altogether.
+  int _namePrompts = 0;
+  int _confirmPrompts = 0;
+  static const int _maxNamePrompts = 8;
+  static const int _maxConfirmPrompts = 6;
+
+  /// Consecutive ENGINE failures (busy/client/network), as opposed to silence.
+  int _recognizerErrors = 0;
+  static const int _maxRecognizerErrors = 4;
+
+  /// The low-cost phones this app targets (e.g. Samsung A04e) need a beat to
+  /// release the speech recogniser between sessions. Restarting it immediately
+  /// returns "busy" and fails instantly, which made the name prompt repeat
+  /// over and over without ever hearing the pupil.
+  static const Duration _recognizerCooldown = Duration(milliseconds: 700);
+
+  /// Set once voice has been given up on, so the screen can offer a way back
+  /// instead of stranding the pupil on a list they cannot see.
+  bool _voiceGaveUp = false;
 
   // Captured while `ref` is valid — using `ref` in dispose() throws and can
   // tear the whole app down during a screen-lock/navigation teardown.
@@ -76,29 +99,79 @@ class _StudentLoginScreenState extends ConsumerState<StudentLoginScreen> {
 
   // ── Voice flow ────────────────────────────────────────────────────────────
 
-  Future<void> _promptName() async {
+  /// Asks for the pupil's name and listens. [retry] uses a SHORT re-ask — on a
+  /// slow phone, replaying the full welcome every time was most of the delay
+  /// the pupil experienced between attempts.
+  Future<void> _promptName({bool retry = false}) async {
     if (!mounted) return;
-    if (_voiceAttempts >= 6) {
-      await ref.read(ttsServiceProvider).speak(
-            'Tap your name on the screen, or tap new student.',
-          );
+    if (_namePrompts >= _maxNamePrompts) {
+      await _giveUpToTapFallback();
       return;
     }
-    _voiceAttempts++;
+    _namePrompts++;
     final session = ++_session;
-    final tts = ref.read(ttsServiceProvider);
-    await ref.read(sttServiceProvider).stopListening();
-    final prompt = _students.isEmpty
-        ? 'Welcome. What is your name? Say it clearly after the beep.'
-        : 'Say your name to continue.';
+    await _stt.stopListening();
+    // Let the recogniser fully release before asking it to start again.
+    await Future<void>.delayed(_recognizerCooldown);
+    if (!mounted || session != _session) return;
+
+    final prompt = retry
+        ? 'Say your name after the tone.'
+        : (_students.isEmpty
+            ? 'Welcome. What is your name? Say it after the tone.'
+            : 'Say your name after the tone.');
     _lastPromptNorm = _normEcho(prompt);
-    await tts.speakAndWait(prompt);
+    await _tts.speakAndWait(prompt);
     if (!mounted || session != _session) return;
     // Let the prompt's audio tail drain before opening the mic, so the
     // recognizer doesn't transcribe our own voice or miss the first word.
     await Future<void>.delayed(const Duration(milliseconds: 400));
     if (!mounted || session != _session) return;
-    _listen(session, (words) => _handleHeardName(words));
+
+    await _cueListening();
+    if (!mounted || session != _session) return;
+    _listen(
+      session,
+      (words) => _handleHeardName(words),
+      onNothing: () => _promptName(retry: true),
+    );
+  }
+
+  /// Marks the exact moment the microphone opens. A pupil who cannot see a
+  /// "listening" indicator otherwise guesses — and on a slow phone most people
+  /// guess too early, speak over the prompt, and are never heard. A vibration
+  /// plus a click carries even in a noisy classroom.
+  Future<void> _cueListening() async {
+    try {
+      await HapticFeedback.mediumImpact();
+      await SystemSound.play(SystemSoundType.click);
+      // Small gap so the click itself isn't the first thing recorded.
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+    } catch (_) {
+      // The cue is a nicety — never let it block listening.
+    }
+  }
+
+  /// Voice has failed repeatedly. Say so once, and leave a way BACK to voice
+  /// (tap anywhere) rather than stranding a blind pupil on a visual list.
+  Future<void> _giveUpToTapFallback() async {
+    if (!mounted) return;
+    setState(() => _voiceGaveUp = true);
+    await _stt.stopListening();
+    await _tts.speakAndWait(
+      'I am having trouble hearing you. Tap anywhere on the screen to try '
+      'again with your voice, or tap new student to type a name.',
+    );
+  }
+
+  /// Restarts the whole voice flow with fresh budgets (tap-anywhere recovery).
+  Future<void> _restartVoice() async {
+    if (!_voiceGaveUp || !mounted) return;
+    setState(() => _voiceGaveUp = false);
+    _namePrompts = 0;
+    _confirmPrompts = 0;
+    _recognizerErrors = 0;
+    await _promptName();
   }
 
   // ── Echo stripping ──────────────────────────────────────────────────────
@@ -135,10 +208,20 @@ class _StudentLoginScreenState extends ConsumerState<StudentLoginScreen> {
     return words.sublist(strippedFrom).join(' ');
   }
 
-  void _listen(int session, void Function(String) onResult,
-      {Duration listenFor = const Duration(seconds: 12),
-      Duration pauseFor = const Duration(seconds: 5)}) {
-    final stt = ref.read(sttServiceProvider);
+  /// Opens one listening window. [onNothing] runs when the window closed with
+  /// nothing usable (silence, or a recoverable engine failure), so each caller
+  /// decides how to re-ask.
+  ///
+  /// Windows are deliberately generous: pupils on a slow phone need a moment to
+  /// react to the tone, and being cut off mid-name was a big part of why the
+  /// prompt kept repeating.
+  void _listen(
+    int session,
+    void Function(String) onResult, {
+    required Future<void> Function() onNothing,
+    Duration listenFor = const Duration(seconds: 20),
+    Duration pauseFor = const Duration(seconds: 6),
+  }) {
     var handled = false;
     var lastPartial = '';
     void deliver(String words) {
@@ -148,7 +231,7 @@ class _StudentLoginScreenState extends ConsumerState<StudentLoginScreen> {
       onResult(_stripPromptEcho(words));
     }
 
-    stt.startListening(
+    final started = _stt.startListening(
       listenFor: listenFor,
       pauseFor: pauseFor,
       // Many Android recognizers end a session WITHOUT a final result, sending
@@ -160,25 +243,64 @@ class _StudentLoginScreenState extends ConsumerState<StudentLoginScreen> {
       onResult: (words) {
         if (handled || session != _session) return;
         handled = true;
-        unawaited(stt.stopListening());
+        _recognizerErrors = 0; // the engine is working again
+        unawaited(_stt.stopListening());
         deliver(words);
       },
       onDone: () {
         if (handled || session != _session) return;
         handled = true;
         if (lastPartial.isNotEmpty) {
-          deliver(lastPartial); // use what we heard, even without a final result
+          _recognizerErrors = 0;
+          deliver(
+              lastPartial); // use what we heard, even without a final result
         } else if (mounted && session == _session) {
-          unawaited(_promptName()); // truly silent -> re-prompt (bounded)
+          unawaited(onNothing()); // truly silent -> re-ask (bounded)
+        }
+      },
+      // An ENGINE failure is not the pupil's fault: don't treat it as a missed
+      // answer. Anything already heard still counts; otherwise back off and try
+      // the microphone again, and only surrender after several in a row.
+      onError: (_) {
+        if (handled || session != _session) return;
+        handled = true;
+        if (lastPartial.isNotEmpty) {
+          _recognizerErrors = 0;
+          deliver(lastPartial);
+          return;
+        }
+        _recognizerErrors++;
+        if (!mounted || session != _session) return;
+        if (_recognizerErrors >= _maxRecognizerErrors) {
+          unawaited(_giveUpToTapFallback());
+        } else {
+          unawaited(onNothing());
         }
       },
     );
+
+    // The engine refused to start (busy or unavailable) — no callback will ever
+    // arrive, so recover here instead of leaving the pupil in silence.
+    if (!started && mounted && session == _session) {
+      _recognizerErrors++;
+      if (_recognizerErrors >= _maxRecognizerErrors) {
+        unawaited(_giveUpToTapFallback());
+      } else {
+        unawaited(onNothing());
+      }
+    }
   }
 
   Future<void> _handleHeardName(String heard) async {
     // Natural speech lead-ins are not part of the name.
     var body = _normEcho(heard);
-    for (final lead in ['my name is ', 'i am ', 'im ', 'call me ', 'name is ']) {
+    for (final lead in [
+      'my name is ',
+      'i am ',
+      'im ',
+      'call me ',
+      'name is '
+    ]) {
       if (body.startsWith(lead)) {
         body = body.substring(lead.length).trim();
         break;
@@ -186,7 +308,7 @@ class _StudentLoginScreenState extends ConsumerState<StudentLoginScreen> {
     }
     final cleaned = _titleCase(body);
     if (_normalize(cleaned).isEmpty) {
-      await _promptName();
+      await _promptName(retry: true);
       return;
     }
     final (best, score) = _bestMatch(cleaned);
@@ -198,7 +320,7 @@ class _StudentLoginScreenState extends ConsumerState<StudentLoginScreen> {
       await _confirm(
         'Welcome back, ${best.name}?',
         onYes: () => _login(best),
-        onNo: () => _promptName(),
+        onNo: () => _promptName(retry: true),
       );
       return;
     }
@@ -215,30 +337,41 @@ class _StudentLoginScreenState extends ConsumerState<StudentLoginScreen> {
       {required Future<void> Function() onYes,
       required Future<void> Function() onNo}) async {
     if (!mounted) return;
-    if (_voiceAttempts >= 8) {
-      await ref.read(ttsServiceProvider).speak(
-            'Tap your name on the screen, or tap new student.',
-          );
+    if (_confirmPrompts >= _maxConfirmPrompts) {
+      await _giveUpToTapFallback();
       return;
     }
-    _voiceAttempts++;
+    _confirmPrompts++;
     final session = ++_session;
-    await ref.read(sttServiceProvider).stopListening();
+    await _stt.stopListening();
+    // Same cooldown as the name prompt: the recogniser needs a beat between
+    // sessions on low-end hardware.
+    await Future<void>.delayed(_recognizerCooldown);
+    if (!mounted || session != _session) return;
     _lastPromptNorm = _normEcho(prompt);
-    await ref.read(ttsServiceProvider).speakAndWait(prompt);
+    await _tts.speakAndWait(prompt);
     if (!mounted || session != _session) return;
     await Future<void>.delayed(const Duration(milliseconds: 400));
     if (!mounted || session != _session) return;
-    _listen(session, (words) async {
-      final yn = _parseYesNo(words);
-      if (yn == true) {
-        await onYes();
-      } else if (yn == false) {
-        await onNo();
-      } else {
-        await _confirm(prompt, onYes: onYes, onNo: onNo);
-      }
-    }, listenFor: const Duration(seconds: 8), pauseFor: const Duration(seconds: 4));
+
+    await _cueListening();
+    if (!mounted || session != _session) return;
+    _listen(
+      session,
+      (words) async {
+        final yn = _parseYesNo(words);
+        if (yn == true) {
+          await onYes();
+        } else if (yn == false) {
+          await onNo();
+        } else {
+          await _confirm(prompt, onYes: onYes, onNo: onNo);
+        }
+      },
+      onNothing: () => _confirm(prompt, onYes: onYes, onNo: onNo),
+      listenFor: const Duration(seconds: 12),
+      pauseFor: const Duration(seconds: 5),
+    );
   }
 
   // ── Actions ────────────────────────────────────────────────────────────────
@@ -247,7 +380,9 @@ class _StudentLoginScreenState extends ConsumerState<StudentLoginScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(kActiveStudentIdKey, student.id);
     if (!mounted) return;
-    await ref.read(ttsServiceProvider).speakAndWait('Welcome, ${student.name}.');
+    await ref
+        .read(ttsServiceProvider)
+        .speakAndWait('Welcome, ${student.name}.');
     if (!mounted) return;
     context.go('/student/home');
   }
@@ -331,7 +466,16 @@ class _StudentLoginScreenState extends ConsumerState<StudentLoginScreen> {
     // and any echoed prompt containing "yes" as an agreement — the app was
     // answering its own questions.
     final words = _normEcho(w).split(' ').toSet();
-    const yes = {'yes', 'yeah', 'yep', 'correct', 'right', 'sure', 'ok', 'okay'};
+    const yes = {
+      'yes',
+      'yeah',
+      'yep',
+      'correct',
+      'right',
+      'sure',
+      'ok',
+      'okay'
+    };
     const no = {'no', 'nope', 'wrong', 'cancel'};
     final saidYes = words.intersection(yes).isNotEmpty;
     final saidNo = words.intersection(no).isNotEmpty;
@@ -352,69 +496,88 @@ class _StudentLoginScreenState extends ConsumerState<StudentLoginScreen> {
     }
     return Scaffold(
       backgroundColor: const Color(0xFFEBF2FF),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 12),
-              const Text(
-                'Who is learning?',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 30,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF1A56DB),
-                ),
-              ),
-              const SizedBox(height: 16),
-              if (_addingNew) ...[
-                TextField(
-                  controller: _nameController,
-                  autofocus: true,
-                  textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(
-                    labelText: 'Student name',
-                    border: OutlineInputBorder(),
-                  ),
-                  onSubmitted: (_) => _submitTypedName(),
-                ),
+      // Tap-anywhere recovery, active ONLY after voice has given up. A blind
+      // pupil cannot find the buttons below, so without this the screen was a
+      // dead end. Child buttons keep their own taps; this catches empty space.
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _voiceGaveUp ? () => unawaited(_restartVoice()) : null,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
                 const SizedBox(height: 12),
-                ElevatedButton(
-                  onPressed: _submitTypedName,
-                  child: const Text('Start learning'),
+                const Text(
+                  'Who is learning?',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 30,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1A56DB),
+                  ),
                 ),
-              ] else ...[
-                Expanded(
-                  child: ListView(
-                    children: [
-                      for (final s in _students)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 6),
-                          child: Semantics(
-                            button: true,
-                            label: 'Continue as ${s.name}',
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.all(20),
-                                textStyle: const TextStyle(fontSize: 22),
+                const SizedBox(height: 16),
+                if (_voiceGaveUp) ...[
+                  Semantics(
+                    button: true,
+                    label: 'Try voice again',
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.mic_rounded),
+                      label: const Text('Try voice again'),
+                      onPressed: () => unawaited(_restartVoice()),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                if (_addingNew) ...[
+                  TextField(
+                    controller: _nameController,
+                    autofocus: true,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      labelText: 'Student name',
+                      border: OutlineInputBorder(),
+                    ),
+                    onSubmitted: (_) => _submitTypedName(),
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: _submitTypedName,
+                    child: const Text('Start learning'),
+                  ),
+                ] else ...[
+                  Expanded(
+                    child: ListView(
+                      children: [
+                        for (final s in _students)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Semantics(
+                              button: true,
+                              label: 'Continue as ${s.name}',
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  padding: const EdgeInsets.all(20),
+                                  textStyle: const TextStyle(fontSize: 22),
+                                ),
+                                onPressed: () => _login(s),
+                                child: Text(s.name),
                               ),
-                              onPressed: () => _login(s),
-                              child: Text(s.name),
                             ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.add),
-                  label: const Text('New student'),
-                  onPressed: () => setState(() => _addingNew = true),
-                ),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.add),
+                    label: const Text('New student'),
+                    onPressed: () => setState(() => _addingNew = true),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
