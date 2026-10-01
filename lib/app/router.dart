@@ -8,8 +8,11 @@ import '../features/teacher/teacher_dashboard_screen.dart';
 import '../features/teacher/teacher_subject_screen.dart';
 import '../features/teacher/teacher_upload_screen.dart';
 import '../features/teacher/teacher_questions_screen.dart';
+import '../features/teacher/teacher_review_screen.dart';
+import '../features/teacher/teacher_class_progress_screen.dart';
+import '../features/student/student_login_screen.dart';
 import '../features/student/student_learning_hub_screen.dart';
-import '../features/student/student_quiz_screen.dart';
+import '../features/student/student_progress_screen.dart';
 
 final routerProvider = Provider<GoRouter>(
   (ref) => GoRouter(
@@ -39,6 +42,11 @@ final routerProvider = Provider<GoRouter>(
         builder: (context, state) => const TeacherDashboardScreen(),
       ),
       GoRoute(
+        name: 'teacherClassProgress',
+        path: '/teacher/progress',
+        builder: (context, state) => const TeacherClassProgressScreen(),
+      ),
+      GoRoute(
         name: 'teacherSubject',
         path: '/teacher/subject/:subjectId',
         builder: (context, state) {
@@ -62,20 +70,30 @@ final routerProvider = Provider<GoRouter>(
           return TeacherQuestionsScreen(lessonId: lessonId);
         },
       ),
+      GoRoute(
+        name: 'teacherReview',
+        path: '/teacher/review/:lessonId',
+        builder: (context, state) {
+          final lessonId = state.pathParameters['lessonId']!;
+          return TeacherReviewScreen(lessonId: lessonId);
+        },
+      ),
 
       // ── Student routes ────────────────────────────────────────────────────
+      GoRoute(
+        name: 'studentPin',
+        path: '/student/pin',
+        builder: (context, state) => const StudentLoginScreen(),
+      ),
       GoRoute(
         name: 'studentHome',
         path: '/student/home',
         builder: (context, state) => const StudentLearningHubScreen(),
       ),
       GoRoute(
-        name: 'studentQuiz',
-        path: '/student/quiz/:lessonId',
-        builder: (context, state) {
-          final lessonId = state.pathParameters['lessonId']!;
-          return StudentQuizScreen(lessonId: lessonId);
-        },
+        name: 'studentProgress',
+        path: '/student/progress',
+        builder: (context, state) => const StudentProgressScreen(),
       ),
     ],
   ),

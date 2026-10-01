@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,7 +10,7 @@ import 'package:audioapp/shared/services/db/app_database.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Teacher Upload Screen
-// Allows a teacher to pick a PDF / DOCX file, preview extracted text, trigger
+// Allows a teacher to pick a PDF / DOCX / TXT file, preview extracted text, trigger
 // offline AI question generation, and persist everything to the local database
 // before redirecting to the questions review screen.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -109,7 +111,7 @@ class _TeacherUploadScreenState extends ConsumerState<TeacherUploadScreen> {
         ),
         const SizedBox(height: 4),
         Text(
-          'Topic #${widget.topicId} — choose a PDF or Word document to get started.',
+          'Topic #${widget.topicId} — choose a PDF, Word, or text document to get started.',
           style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
         ),
       ],
@@ -144,7 +146,7 @@ class _TeacherUploadScreenState extends ConsumerState<TeacherUploadScreen> {
                     ),
                     SizedBox(height: 2),
                     Text(
-                      'PDF or Word document (.docx)',
+                      'PDF, Word (.docx), or plain text (.txt)',
                       style: TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                   ],
@@ -346,7 +348,7 @@ class _TeacherUploadScreenState extends ConsumerState<TeacherUploadScreen> {
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF1A56DB),
           foregroundColor: Colors.white,
-          disabledBackgroundColor: const Color(0xFF1A56DB).withOpacity(0.6),
+          disabledBackgroundColor: const Color(0xFF1A56DB).withValues(alpha: 0.6),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
@@ -378,7 +380,7 @@ class _TeacherUploadScreenState extends ConsumerState<TeacherUploadScreen> {
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf', 'docx'],
+      allowedExtensions: ['pdf', 'docx', 'txt'],
     );
 
     if (result == null || result.files.isEmpty) return;
@@ -464,11 +466,46 @@ class _TeacherUploadScreenState extends ConsumerState<TeacherUploadScreen> {
         );
       }
 
+      // ── 3b. Share to the cloud class so students on other devices get it.
+      // Fire-and-forget: the lesson is already saved locally, so a cold or
+      // offline backend must never block the teacher. Only does anything once
+      // the teacher has connected their class — and the teacher must be TOLD
+      // which of the two happened. Field test: a teacher uploaded notes,
+      // shared the APK with a colleague, and expected the notes to be there.
+      // The APK carries the app, not the data; content only travels through
+      // the class link. A silent local-only save reads as "sync is broken".
+      final teacher = ref.read(currentTeacherProvider);
+      var cloudLinked = false;
+      if (teacher != null) {
+        final link = await ref
+            .read(backendLinkServiceProvider)
+            .getTeacherLink(teacher.id);
+        cloudLinked = link != null && (link.subjectId?.isNotEmpty ?? false);
+        final topic = await db.topicDao.getTopicById(topicId);
+        final title = (topic != null && topic.name.trim().isNotEmpty)
+            ? topic.name.trim()
+            : (_fileName ?? 'Lesson');
+        unawaited(ref.read(backendLinkServiceProvider).uploadTeacherNote(
+              localTeacherId: teacher.id,
+              localLessonId: lessonId,
+              title: title,
+              gradeLevel: 'General',
+              lessonText: _extractedText,
+              // Same questions the students will hear — pushed as unapproved
+              // review items so the teacher can vet them from any device.
+              questions: aiQuestions,
+            ));
+      }
+
       setState(() {
         _saving = false;
         _questionsGenerated = aiQuestions.length;
-        _statusMessage =
-            '$_questionsGenerated questions generated. Redirecting…';
+        _statusMessage = cloudLinked
+            ? '$_questionsGenerated questions generated. '
+                'Sharing to your class online in the background. Redirecting…'
+            : '$_questionsGenerated questions generated. '
+                'Saved on this phone only — connect your class to share '
+                'with students on other devices. Redirecting…';
       });
 
       // ── 4. Navigate to questions review after a brief pause ───────────

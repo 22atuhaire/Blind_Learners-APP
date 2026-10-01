@@ -16,7 +16,7 @@ class PinAuthService {
   final int _iterations;
 
   PinAuthService({FlutterSecureStorage? secureStorage, int iterations = 10000})
-      : _secureStorage = secureStorage ?? FlutterSecureStorage(),
+      : _secureStorage = secureStorage ?? const FlutterSecureStorage(),
         _iterations = iterations;
 
   Future<bool> hasPin() async {

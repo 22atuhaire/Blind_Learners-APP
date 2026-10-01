@@ -1,5 +1,5 @@
 name: audioapp
-description: Interactive audio learning platform for visually impaired students in Uganda.
+description: AudioLearner — interactive audio learning platform for visually impaired students in Uganda.
 publish_to: "none"
 version: 1.0.0+1
 
@@ -10,25 +10,32 @@ dependencies:
   flutter:
     sdk: flutter
 
-  flutter_tts: ^4.0.2
-  just_audio: ^0.9.36
-  drift: ^2.14.0
+  # Speech
+  flutter_tts: ^4.0.2 # lesson playback, spoken prompts
+  speech_to_text: ^7.0.0 # voice commands and ask-a-question
+
+  # Local-first storage
+  drift: ^2.14.0 # lessons, questions, progress (offline source of truth)
   drift_flutter: ^0.1.0
-  path_provider: ^2.1.2
-  path: ^1.9.0
-  file_picker: ^8.0.3
-  go_router: ^13.2.0
-  connectivity_plus: ^5.0.2
-  pdfx: ^2.6.0
+  shared_preferences: ^2.2.3 # device mode, active student, id maps
+  flutter_secure_storage: ^8.0.0 # backend tokens
+
+  # App plumbing
   flutter_riverpod: ^2.5.1
-  shared_preferences: ^2.2.3
-  flutter_secure_storage: ^8.0.0
+  go_router: ^13.2.0
+  http: ^1.2.0 # backend client
   cupertino_icons: ^1.0.8
-  crypto: ^3.0.3
+
+  # Teacher note import — .docx is a zip of XML, so both are needed.
+  # NOTE: PDF text is extracted by hand in file_extraction_service.dart
+  # (_parsePdfText), deliberately: it avoids a heavyweight PDF renderer on
+  # low-end phones. That is why there is no PDF package here.
+  file_picker: ^8.0.3
   archive: ^3.6.1
   xml: ^6.5.0
-  url_launcher: ^6.2.0
-  speech_to_text: ^7.0.0
+
+  # Teacher PIN hashing
+  crypto: ^3.0.3
 
 dev_dependencies:
   flutter_test:
@@ -36,6 +43,45 @@ dev_dependencies:
   flutter_lints: ^3.0.0
   drift_dev: ^2.14.0
   build_runner: ^2.4.8
+  flutter_launcher_icons: ^0.14.1
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/icon/
+
+# ─────────────────────────────────────────────────────────────────────────────
+# App launcher icon — replaces Flutter's default blue swirl everywhere.
+#
+# Regenerate after changing assets/icon/app_icon.png:
+#     flutter pub get
+#     dart run flutter_launcher_icons
+#
+# This rewrites every Android mipmap density, the iOS AppIcon set and the web
+# icons in one pass, so no icon is left showing the Flutter default.
+#
+# adaptive_icon_* exists because this app targets Android 8.0 (API 26) and
+# above, where the launcher MASKS the icon into a circle or squircle of the
+# device's choosing. Supplying only a square icon lets the launcher crop the
+# edges off. The foreground is drawn inside a safe zone over a white
+# background that matches the logo's own backdrop.
+# ─────────────────────────────────────────────────────────────────────────────
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  remove_alpha_ios: true
+  image_path: "assets/icon/app_icon.png"
+  # Navy panel sampled from the AudioLearner artwork. This shows wherever the
+  # launcher's mask reveals background, so it must match the logo exactly or a
+  # visible seam appears around the icon on some devices.
+  adaptive_icon_background: "#032A5F"
+  adaptive_icon_foreground: "assets/icon/app_icon.png"
+  # Shrinks the artwork inside the adaptive icon's safe zone so a circular or
+  # squircle launcher mask cannot clip the mark. Raise it if the logo still
+  # touches the edges on a device.
+  adaptive_icon_foreground_inset: 18
+  web:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+    background_color: "#032A5F"
+    theme_color: "#032A5F"
