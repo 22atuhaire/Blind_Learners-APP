@@ -1,4 +1,4 @@
-# VisioLearn — Audio Learning App (`audioapp`)
+# AudioLearner — Audio Learning App (`audioapp`)
 
 A **voice-first, gesture-driven** mobile learning app for **visually impaired students in Ugandan schools**. The app is **offline-first**: everything a student needs to learn lives in a local database and works with no network. An optional cloud bridge lets teachers' uploaded notes flow in when a connection is available.
 
@@ -67,4 +67,4 @@ flutter analyze
 
 ## Backend
 
-The cloud features target the VisioLearn FastAPI backend (default `https://visiolearn-backend.onrender.com`, configurable in [`backend_api_service.dart`](lib/shared/services/backend_api_service.dart)). It is hosted on a free tier that cold-starts after idle, so the app warms it up early and caps every sync. See [`../VisioLearn-Backend/README.md`](../VisioLearn-Backend/README.md).
+The cloud features target the AudioLearner FastAPI backend (default `https://visiolearn-backend.onrender.com`, configurable in [`backend_api_service.dart`](lib/shared/services/backend_api_service.dart)). It is hosted on a free tier that cold-starts after idle, so the app warms it up early and caps every sync. See [`../VisioLearn-Backend/README.md`](../VisioLearn-Backend/README.md).

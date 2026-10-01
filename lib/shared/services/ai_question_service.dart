@@ -28,6 +28,23 @@ class AiGeneratedQuestion {
       'AiGeneratedQuestion(q: "$questionText", correct: $correctOption)';
 }
 
+/// One sentence kept from a note, tagged with the section it came from.
+class _ScannedSentence {
+  const _ScannedSentence(this.text, this.section);
+  final String text;
+  final int section;
+}
+
+/// A question the generator could ask, before selection decides whether it
+/// earns one of the quiz's limited slots.
+class _Candidate {
+  const _Candidate(this.index, this.section, this.question, this.head);
+  final int index;
+  final int section;
+  final AiGeneratedQuestion question;
+  final String head;
+}
+
 /// Offline fallback quiz generator, used only when a lesson has no
 /// server-authored (teacher-reviewed) questions — e.g. notes created while
 /// offline. Mirrors the backend generator: short, audio-friendly definition and
@@ -45,10 +62,30 @@ class AiGeneratedQuestion {
 ///    and conditional rules ("X is Y IF Z") are never treated as definitions;
 ///  - options are cut on phrase boundaries with balanced parentheses.
 class AiQuestionService {
-  static const int _maxQuestions = 5;
+  // Quiz length scales with how much the note actually covers. A fixed cap of
+  // five spent every slot on a note's opening section: the evaluation harness
+  // (eval/) measured five questions about nouns in a Parts of Speech note that
+  // never reached verbs, adjectives or adverbs. A longer chapter earns a
+  // longer quiz, exactly as a teacher would set one.
+  static const int _minQuestions = 5;
+  static const int _maxQuestionsCap = 8;
+
+  static int _questionBudget(int sentenceCount) {
+    final scaled = _minQuestions + ((sentenceCount - 20) ~/ 6);
+    if (scaled < _minQuestions) return _minQuestions;
+    if (scaled > _maxQuestionsCap) return _maxQuestionsCap;
+    return scaled;
+  }
 
   static final RegExp _sentenceSplitter = RegExp(r'(?<=[.!?])\s+|\n+');
   static final RegExp _whitespace = RegExp(r'\s+');
+  static final RegExp _bulletPrefix = RegExp(r'^\s*(?:[-*•]|\d+[.)])\s+');
+
+  /// "X is Y if/when Z" — a curriculum RULE. Not a definition, but very much
+  /// worth testing ("A number is divisible by 2 if its last digit is even").
+  static final RegExp _rulePattern = RegExp(
+      r'^(.{3,60}?)\s(is|are)\s(.{3,80}?)\s(?:if|when)\s(.{5,90})$',
+      caseSensitive: false);
 
   static const List<String> _linkingVerbs = [' is ', ' are ', ' was ', ' were '];
 
@@ -102,41 +139,100 @@ class AiQuestionService {
     'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety',
   };
 
-  /// Generates up to [_maxQuestions] MCQs from [lessonText]. Empty when the
+  /// Generates MCQs from [lessonText] — between [_minQuestions] and
+  /// [_maxQuestionsCap], scaled to how much the note covers. Empty when the
   /// text is blank or has too few usable sentences.
   List<AiGeneratedQuestion> generateQuestions(String lessonText) {
     if (lessonText.trim().isEmpty) return [];
 
-    final sentences = _usableSentences(lessonText);
-    if (sentences.length < 2) return [];
+    final scanned = _scanSentences(lessonText);
+    if (scanned.length < 2) return [];
 
+    final sentences = scanned.map((e) => e.text).toList();
     final rng = Random(lessonText.hashCode);
     final keyTerms = _keyTerms(sentences);
+    final budget = _questionBudget(scanned.length);
 
-    final questions = <AiGeneratedQuestion>[];
-    final used = <String>{};
-
-    for (final s in sentences) {
-      if (questions.length >= _maxQuestions) break;
-      if (used.contains(s)) continue;
-      final q = _definitionMcq(s, sentences, rng);
+    // Build every candidate first, then CHOOSE across the note. Selecting the
+    // first N in reading order clustered the whole quiz in section one.
+    final candidates = <_Candidate>[];
+    for (var i = 0; i < scanned.length; i++) {
+      final s = scanned[i].text;
+      final q = _definitionMcq(s, sentences, rng) ?? _ruleMcq(s, sentences, rng);
       if (q != null) {
-        used.add(s);
-        questions.add(q);
+        candidates.add(_Candidate(i, scanned[i].section, q, _subjectHead(q)));
       }
     }
 
-    for (final s in sentences) {
-      if (questions.length >= _maxQuestions) break;
-      if (used.contains(s)) continue;
-      final q = _clozeMcq(s, keyTerms, rng);
-      if (q != null) {
-        used.add(s);
-        questions.add(q);
+    final chosen = <int, AiGeneratedQuestion>{};
+    final usedSections = <int>{};
+    final usedHeads = <String>{};
+
+    // Pass 1 — at most one question per section, and never two questions about
+    // the same head noun ("common noun", "proper noun", "collective noun"…).
+    for (final c in candidates) {
+      if (chosen.length >= budget) break;
+      if (usedSections.contains(c.section)) continue;
+      if (c.head.isNotEmpty && usedHeads.contains(c.head)) continue;
+      usedSections.add(c.section);
+      if (c.head.isNotEmpty) usedHeads.add(c.head);
+      chosen[c.index] = c.question;
+    }
+    // Pass 2 — slots left: allow a second question per section, new heads only.
+    for (final c in candidates) {
+      if (chosen.length >= budget) break;
+      if (chosen.containsKey(c.index)) continue;
+      if (c.head.isNotEmpty && usedHeads.contains(c.head)) continue;
+      if (c.head.isNotEmpty) usedHeads.add(c.head);
+      chosen[c.index] = c.question;
+    }
+
+    // Fill any remainder with clozes, but only over sentences that actually
+    // state something. Without this guard a list-heavy note produced
+    // "Cows, goats, ____, dogs" — content-bound, and pedagogically worthless.
+    if (chosen.length < budget) {
+      for (var i = 0; i < scanned.length; i++) {
+        if (chosen.length >= budget) break;
+        if (chosen.containsKey(i)) continue;
+        if (!_isStatement(scanned[i].text)) continue;
+        final q = _clozeMcq(scanned[i].text, keyTerms, rng);
+        if (q != null) chosen[i] = q;
       }
     }
 
-    return questions;
+    final orderedIndices = chosen.keys.toList()..sort();
+    return [for (final i in orderedIndices) chosen[i]!];
+  }
+
+  /// The head noun of a generated question's subject, used to stop a quiz
+  /// asking five variations of the same thing.
+  String _subjectHead(AiGeneratedQuestion q) {
+    final m = RegExp(r'^(?:What|When) (?:is|are) (.+?)\??$', caseSensitive: false)
+        .firstMatch(q.questionText);
+    if (m == null) return '';
+    final words = m
+        .group(1)!
+        .split(_whitespace)
+        .map((w) => w.toLowerCase().replaceAll(RegExp(r'[^a-z]'), ''))
+        .where((w) => w.isNotEmpty && !_stopwords.contains(w))
+        .toList();
+    return words.isEmpty ? '' : words.last;
+  }
+
+  /// A sentence worth blanking: it asserts something, rather than listing
+  /// examples separated by commas.
+  bool _isStatement(String s) {
+    final hasVerb = _linkingVerbs.any(s.contains) ||
+        s.contains(' means ') ||
+        s.contains(' called ') ||
+        s.contains(' used ') ||
+        s.contains(' has ') ||
+        s.contains(' have ');
+    if (!hasVerb) return false;
+    if (','.allMatches(s).length >= 2 && !_linkingVerbs.any(s.contains)) {
+      return false;
+    }
+    return true;
   }
 
   /// Structure-aware sentence extraction. Notes are not prose: they carry
@@ -144,16 +240,40 @@ class AiQuestionService {
   /// must be removed BEFORE sentence splitting, or they fuse with real
   /// sentences ("Rules for divisibility: A number is divisible by 2…" made
   /// the question "What is Rules for divisibility: A number?").
-  List<String> _usableSentences(String lessonText) {
-    final cleanedLines = <String>[];
+  List<_ScannedSentence> _scanSentences(String lessonText) {
+    // Pass 1 — clean lines, and record which SECTION each belongs to. The
+    // heading lines we already discard are exactly the topic boundaries, so
+    // tracking them lets the quiz spread one question per topic.
+    final kept = <_ScannedSentence>[];
+    var section = 0;
     for (var line in lessonText.split('\n')) {
       line = line.trim();
       if (line.isEmpty) continue;
       // Decorative separators / vertical arithmetic ("---------", "+ 23,657").
       if (!RegExp(r'[A-Za-z]').hasMatch(line)) continue;
-      // Label-only lines ("Key terms:", "Rules for rounding:", "BODMAS stands
-      // for:") introduce what follows; they are not statements.
-      if (line.endsWith(':')) continue;
+      // Table rows are data, not prose, and they start a new topic block.
+      if ('|'.allMatches(line).length >= 2) {
+        section++;
+        continue;
+      }
+      // Label-only lines ("Key terms:", "Rules for rounding:") introduce what
+      // follows; they are not statements, but they DO start a sub-topic.
+      if (line.endsWith(':')) {
+        section++;
+        continue;
+      }
+      // Headings ("MATHEMATICS NOTES FOR PRIMARY SIX") are titles, not
+      // teachable sentences — and they mark a new topic.
+      final upper = RegExp(r'[A-Z]').allMatches(line).length;
+      final lower = RegExp(r'[a-z]').allMatches(line).length;
+      if (upper + lower >= 3 && upper > 2 * lower) {
+        section++;
+        continue;
+      }
+      // A numbered section start ("3. ROUNDING OFF NUMBERS").
+      if (RegExp(r'^\d+\.\s+[A-Z]').hasMatch(line)) section++;
+      // Strip a list bullet so the sentence isn't read as "- They provide…".
+      line = line.replaceFirst(_bulletPrefix, '');
       // Strip short leading labels ("Example: …", "Answer: …", "Activity 3: …")
       // so the sentence itself survives without the label fused on.
       final labelMatch = RegExp(r'^([^.!?:]{1,32}):\s+').firstMatch(line);
@@ -161,33 +281,81 @@ class AiQuestionService {
         line = line.substring(labelMatch.end).trim();
         if (line.isEmpty) continue;
       }
-      // Headings ("MATHEMATICS NOTES FOR PRIMARY SIX") are titles, not
-      // teachable sentences — mostly-uppercase lines are dropped so they can
-      // never become fill-in-the-blank questions.
-      final upper = RegExp(r'[A-Z]').allMatches(line).length;
-      final lower = RegExp(r'[a-z]').allMatches(line).length;
-      if (upper + lower >= 3 && upper > 2 * lower) continue;
-      cleanedLines.add(line);
+      if (line.isEmpty) continue;
+
+      // Pass 2 — split the surviving line into sentences and filter.
+      for (final raw in line.split(_sentenceSplitter)) {
+        final s = raw.trim();
+        final words = s.split(_whitespace).where((w) => w.isNotEmpty).toList();
+        if (words.length < 5 || words.length > 40) continue;
+        // Worked arithmetic / table remnants are practice, not teachable prose.
+        if (s.contains('=') || s.contains('|')) continue;
+        // Mostly digits → a calculation or data row, not a statement.
+        final digits = RegExp(r'[0-9]').allMatches(s).length;
+        final letters = RegExp(r'[A-Za-z]').allMatches(s).length;
+        if (digits > 0 && digits * 2 >= letters) continue;
+        // Instructions to the reader ("Round 89,365 to the nearest 100.").
+        final first =
+            words.first.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '');
+        if (_imperativeStarts.contains(first)) continue;
+        kept.add(_ScannedSentence(s, section));
+      }
+    }
+    return kept;
+  }
+
+  /// Turns a curriculum rule into a question: "A number is divisible by 2 if
+  /// its last digit is even" → "When is a number divisible by 2?".
+  /// Rules are explicitly rejected by [_definitionMcq] (they do not define
+  /// their subject), but they carry much of what a syllabus actually tests,
+  /// so they get their own pattern rather than being thrown away.
+  AiGeneratedQuestion? _ruleMcq(String sentence, List<String> all, Random rng) {
+    final m = _rulePattern.firstMatch(_stripTrailingDot(sentence));
+    if (m == null) return null;
+
+    final subject = m.group(1)!.trim();
+    final verb = m.group(2)!.toLowerCase();
+    final predicate = m.group(3)!.trim();
+    if (subject.contains(',') || subject.contains(':')) return null;
+
+    final subjWords =
+        subject.split(_whitespace).where((w) => w.isNotEmpty).toList();
+    if (subjWords.isEmpty || subjWords.length > 6) return null;
+    final firstWord =
+        subjWords.first.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '');
+    if (_pronounSubjects.contains(firstWord) ||
+        _interrogatives.contains(firstWord) ||
+        _clauseLeadIns.contains(firstWord)) {
+      return null;
     }
 
-    return cleanedLines
-        .join('\n')
-        .split(_sentenceSplitter)
-        .map((s) => s.trim())
-        .where((s) {
-      final words = s.split(_whitespace).where((w) => w.isNotEmpty).toList();
-      if (words.length < 5 || words.length > 40) return false;
-      // Worked arithmetic is practice, not teachable prose.
-      if (s.contains('=')) return false;
-      // Mostly digits → a calculation or data row, not a statement.
-      final digits = RegExp(r'[0-9]').allMatches(s).length;
-      final letters = RegExp(r'[A-Za-z]').allMatches(s).length;
-      if (digits > 0 && digits * 2 >= letters) return false;
-      // Instructions to the reader ("Round 89,365 to the nearest 100.").
-      final first = words.first.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '');
-      if (_imperativeStarts.contains(first)) return false;
-      return true;
-    }).toList();
+    final correct = _shortPhrase(m.group(4)!, 12);
+    if (!_isSpeakableOption(correct)) return null;
+
+    // Distractors are the CONDITIONS of the note's other rules — same register,
+    // same length, and genuinely wrong for this rule.
+    final pool = <String>[];
+    for (final other in all) {
+      if (other == sentence) continue;
+      final om = _rulePattern.firstMatch(_stripTrailingDot(other));
+      if (om == null) continue;
+      final cond = _shortPhrase(om.group(4)!, 12);
+      if (_isSpeakableOption(cond) &&
+          cond.toLowerCase() != correct.toLowerCase()) {
+        pool.add(cond);
+      }
+    }
+    final distractors = _pickLengthMatched(correct, _dedupe(pool), 3, rng);
+    if (distractors.length < 3) return null;
+
+    return _assemble(
+      questionText:
+          'When $verb ${_shortPhrase(subject, 8)} ${_shortPhrase(predicate, 8)}?',
+      correct: correct,
+      wrongs: distractors,
+      explanation: 'From your lesson: ${_truncate(sentence, 200)}',
+      rng: rng,
+    );
   }
 
   AiGeneratedQuestion? _definitionMcq(

@@ -1283,13 +1283,17 @@ class BackendLinkService {
 
   static final Random _random = Random.secure();
 
-  /// `student<id>-<6 random alphanumerics>@device.visiolearn.app` — unique, never
+  /// `student<id>-<6 random alphanumerics>@device.audiolearner.app` — unique, never
   /// shown to the student, exists purely so the backend has an email to key on.
+  ///
+  /// The generated address is persisted with the student's link the first time
+  /// it is created and is never recomputed for lookup, so changing this domain
+  /// affects only newly linked students; existing accounts keep working.
   String _generateStudentEmail(int localStudentId) {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
     final suffix =
         List.generate(6, (_) => chars[_random.nextInt(chars.length)]).join();
-    return 'student$localStudentId-$suffix@device.visiolearn.app';
+    return 'student$localStudentId-$suffix@device.audiolearner.app';
   }
 
   /// Meets the backend's password policy (8+ chars, upper, lower, digit,

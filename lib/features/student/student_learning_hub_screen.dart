@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:drift/drift.dart' show Value;
+import 'package:audioapp/shared/services/accessibility_service.dart';
 import 'package:audioapp/shared/services/backend_api_service.dart';
 import 'package:audioapp/shared/services/backend_link_service.dart';
 import 'package:audioapp/shared/services/db/app_database.dart';
@@ -361,6 +362,12 @@ class _StudentLearningHubScreenState
   /// covered by [_announceCurrentState].
   Future<void> _announceAndListen(String text) async {
     if (!mounted) return;
+    // See _announceCurrentState: under a screen reader these one-off messages
+    // go through the semantics layer so TalkBack speaks them in its own voice.
+    if (_screenReaderOn) {
+      AccessibilityMode.announce(text);
+      return;
+    }
     final session = ++_voiceLoopSession;
     // Free the microphone before speaking: a still-open engine session from
     // the previous window would make the next startListening a silent no-op
@@ -376,6 +383,15 @@ class _StudentLearningHubScreenState
   /// Speaks each message in [texts] in order, then opens a listening window.
   Future<void> _announceSequenceAndListen(List<String> texts) async {
     if (!mounted) return;
+    // Quiz feedback ("Correct." / "The correct answer is…") reaches a TalkBack
+    // user through the semantics layer. This matters more than it looks: the
+    // result of answering is an event with no widget to focus, so without an
+    // explicit announcement the student would simply get silence at the one
+    // moment they most need to be told how they did.
+    if (_screenReaderOn) {
+      AccessibilityMode.announce(texts.join(' '));
+      return;
+    }
     final session = ++_voiceLoopSession;
     // See _announceAndListen: the engine must be free before TTS starts.
     await ref.read(sttServiceProvider).stopListening();
@@ -390,6 +406,11 @@ class _StudentLearningHubScreenState
     await _listenForVoiceCommand(session);
   }
 
+  /// True when TalkBack (or another reader) is driving the screen. Cached per
+  /// frame from the platform rather than a widget lookup so the voice loop and
+  /// the announcement paths can consult it outside build().
+  bool get _screenReaderOn => AccessibilityMode.isScreenReaderActive;
+
   /// Opens ONE listening window after an announcement. If nothing usable is
   /// heard (silence, or only our own prompt echoing back), it re-arms at most
   /// [_maxSilentWindows] times then goes quiet — a gesture or the next
@@ -398,6 +419,12 @@ class _StudentLearningHubScreenState
   /// words (e.g. "subjects", "play") trigger navigation on its own.
   Future<void> _listenForVoiceCommand(int session) async {
     if (!mounted || _voiceLoopSuspended || session != _voiceLoopSession) return;
+    // Under a screen reader the microphone stays shut unless the student asks
+    // for it: TalkBack narrates continuously as they explore by touch, the mic
+    // hears that narration, and the recogniser would feed the app its own
+    // interface as commands. The "Ask a question" button still opens the mic
+    // deliberately.
+    if (_screenReaderOn) return;
 
     final stt = ref.read(sttServiceProvider);
     final ready = await stt.initialize();
@@ -1012,6 +1039,16 @@ class _StudentLearningHubScreenState
     final session = ++_voiceLoopSession;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted || session != _voiceLoopSession) return;
+
+      // Screen-reader mode: hand the announcement to TalkBack instead of
+      // speaking it ourselves. Announcing through the semantics layer means
+      // ONE voice, at the student's own configured rate and pitch, using the
+      // engine they already know — instead of our TTS talking over theirs.
+      if (_screenReaderOn) {
+        if (shouldSpeak) AccessibilityMode.announce(_announcementText());
+        return;
+      }
+
       // Free the microphone before speaking (see _announceAndListen).
       await ref.read(sttServiceProvider).stopListening();
       if (!mounted || session != _voiceLoopSession) return;
@@ -1634,10 +1671,26 @@ class _StudentLearningHubScreenState
         ],
       ),
       padding: const EdgeInsets.all(20),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
+      // Scrollable, but still vertically centred when there is room.
+      //
+      // Two things legitimately shrink this card's space: the screen-reader
+      // control panel below it, and a large system font scale — which the
+      // low-vision students this app serves very often have turned on. Either
+      // one previously produced a RenderFlex overflow and clipped content off
+      // the bottom, invisibly. A fixed Column cannot express "centre if you
+      // fit, scroll if you don't"; this can.
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              // min + the minHeight above: the Column hugs its content, and
+              // the constraint stretches it to fill only when there is spare
+              // room, so centring still works without forcing an overflow.
+              mainAxisSize: MainAxisSize.min,
+              children: [
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -1719,7 +1772,10 @@ class _StudentLearningHubScreenState
               fontSize: 12,
             ),
           ),
-        ],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -2090,7 +2146,12 @@ class _StudentLearningHubScreenState
           setState(() => _stage = LearningStage.subjects);
           _announceCurrentState(force: true);
         } else {
-          context.go('/role');
+          // Leaving the hub deliberately is a SIGN OUT. The role screen now
+          // resumes a known student straight back here, so without clearing
+          // the active student first this back action would bounce them
+          // into the hub again — an inescapable loop with no way to switch
+          // user or reach the teacher side.
+          unawaited(_signOutAndLeave());
         }
       },
       child: Scaffold(
@@ -2198,6 +2259,20 @@ class _StudentLearningHubScreenState
                       ),
                     ),
                   ),
+                  // Real, focusable controls. Under TalkBack the custom
+                  // gestures below cannot be relied on — TalkBack consumes
+                  // swipes for its own navigation — so every action the
+                  // gestures offer also exists here as a labelled button the
+                  // student reaches by the standard swipe-to-next-item and
+                  // activates with the standard double-tap they already use
+                  // on every other app.
+                  if (AccessibilityMode.of(context).needsExplicitControls)
+                    _buildAccessibleControls(),
+                  // The footer teaches the gesture set. Under a screen reader
+                  // those gestures do not apply (TalkBack owns them) and the
+                  // buttons above are self-describing, so the footer would be
+                  // misleading clutter competing for scarce vertical space.
+                  if (!AccessibilityMode.of(context).needsExplicitControls)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                     child: Container(
@@ -2232,6 +2307,131 @@ class _StudentLearningHubScreenState
               ),
             ),
           ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Clears the remembered student and returns to the role screen.
+  ///
+  /// The counterpart to auto-resume: resume makes the common case (same
+  /// student, same phone) frictionless, and this makes the uncommon case
+  /// (different student, or the teacher needs the app) still reachable.
+  Future<void> _signOutAndLeave() async {
+    _voiceLoopSession++;
+    try {
+      await ref.read(sttServiceProvider).stopListening();
+      await ref.read(ttsServiceProvider).stop();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('active_student_id');
+    } catch (_) {
+      // Leaving must never be blocked by a failure to tidy up.
+    }
+    if (!mounted) return;
+    context.go('/role');
+  }
+
+  /// The screen-reader control surface: every action the gesture loop offers,
+  /// as ordinary focusable buttons.
+  ///
+  /// Only shown when a screen reader is active. Sighted and voice-first users
+  /// keep the uncluttered screen; TalkBack users get controls that work with
+  /// the navigation they already know, instead of app-specific gestures
+  /// TalkBack would swallow before the app ever saw them.
+  ///
+  /// The set changes with the stage so the student is never offered an action
+  /// that does nothing — a dead button is worse by ear than no button.
+  Widget _buildAccessibleControls() {
+    final buttons = <Widget>[];
+
+    void add(String label, String hint, IconData icon, VoidCallback action) {
+      buttons.add(AccessibleActionButton(
+        label: label,
+        hint: hint,
+        icon: icon,
+        onPressed: () {
+          _silentWindows = 0;
+          action();
+        },
+      ));
+    }
+
+    switch (_stage) {
+      case LearningStage.subjects:
+        add('Previous subject', 'Moves back one subject',
+            Icons.chevron_left_rounded, _onSwipeLeft);
+        add('Next subject', 'Moves forward one subject',
+            Icons.chevron_right_rounded, _onSwipeRight);
+        add('Open subject', 'Opens the subject you are on',
+            Icons.folder_open_rounded, _onDoubleTap);
+        break;
+      case LearningStage.topics:
+        add('Previous topic', 'Moves back one topic',
+            Icons.chevron_left_rounded, _onSwipeLeft);
+        add('Next topic', 'Moves forward one topic',
+            Icons.chevron_right_rounded, _onSwipeRight);
+        add('Open topic', 'Opens the lesson for this topic',
+            Icons.menu_book_rounded, _onDoubleTap);
+        break;
+      case LearningStage.lesson:
+        add(_lessonPlaying ? 'Pause lesson' : 'Play lesson',
+            _lessonPlaying ? 'Stops reading' : 'Reads the lesson aloud',
+            _lessonPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+            _toggleLessonPlayback);
+        add('Read slower', 'Lowers the reading speed',
+            Icons.slow_motion_video_rounded,
+            () => unawaited(_changeSpeechRate(slower: true)));
+        add('Read faster', 'Raises the reading speed', Icons.speed_rounded,
+            () => unawaited(_changeSpeechRate(slower: false)));
+        add('Repeat lesson', 'Reads this lesson again from the start',
+            Icons.replay_rounded, _onSwipeUp);
+        add('Ask a question', 'Ask about this lesson using your voice',
+            Icons.help_outline_rounded, () => unawaited(_enterAskMode()));
+        add('Go to questions', 'Starts the quiz for this lesson',
+            Icons.quiz_rounded, _onSwipeDown);
+        break;
+      case LearningStage.quizConfirm:
+        add('Start questions', 'Begins the quiz', Icons.play_arrow_rounded,
+            _onDoubleTap);
+        add('Back to lesson', 'Returns to the lesson', Icons.arrow_back_rounded,
+            _onSwipeUp);
+        break;
+      case LearningStage.quiz:
+        if (!_quizAnswered && !_quizComplete) {
+          add('Previous answer', 'Hear the previous option',
+              Icons.chevron_left_rounded, _onSwipeLeft);
+          add('Next answer', 'Hear the next option',
+              Icons.chevron_right_rounded, _onSwipeRight);
+          add('Choose this answer', 'Submits the option you are on',
+              Icons.check_circle_outline_rounded, _onDoubleTap);
+        } else {
+          add('Continue', 'Goes to the next question',
+              Icons.arrow_forward_rounded, _onDoubleTap);
+        }
+        add('Repeat question', 'Reads the question and option again',
+            Icons.replay_rounded, () => _announceCurrentState(force: true));
+        break;
+    }
+
+    // Available from anywhere.
+    add('My progress', 'Hear how much you have completed',
+        Icons.insights_rounded, _openProgress);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      child: Semantics(
+        container: true,
+        label: 'Learning controls',
+        // Capped and scrollable so the panel can never starve the lesson card
+        // above it. The lesson stage offers seven controls, which wrap onto
+        // several rows on a narrow phone — unbounded, that pushed the card
+        // into an overflow. TalkBack scrolls a focused button into view by
+        // itself, so nothing here becomes unreachable by being off-screen.
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 180),
+          child: SingleChildScrollView(
+            child: Wrap(spacing: 10, runSpacing: 10, children: buttons),
           ),
         ),
       ),

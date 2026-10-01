@@ -3,6 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:audioapp/features/student/student_login_screen.dart'
+    show kActiveStudentIdKey;
+import 'package:audioapp/shared/services/accessibility_service.dart';
 import 'package:audioapp/shared/services/providers.dart';
 import 'package:audioapp/shared/services/stt_service.dart';
 import 'package:audioapp/shared/services/tts_service.dart';
@@ -37,16 +42,62 @@ class _RoleSelectionScreenState extends ConsumerState<RoleSelectionScreen> {
     Future<void>(() async {
       await ref.read(ttsInitProvider.future);
       if (!mounted) return;
+
+      // Resume straight into learning for a student who has used this phone
+      // before. Without this, every launch asks "student or teacher?" and
+      // then "say your name" again — a toll a sighted user never pays,
+      // charged to the student least able to pay it. It is also what makes
+      // "Hey Google, open AudioLearner" genuinely useful: the student lands
+      // in their lessons, speaking, instead of on a menu.
+      if (await _resumeReturningStudent()) return;
+
       await Future<void>.delayed(const Duration(milliseconds: 500));
       if (!mounted) return;
-      await ref.read(ttsServiceProvider).speakAndWait(
-            'Welcome to audio learning platform. Say student to continue as '
-            'a student, or say teacher to continue as a teacher. You can '
-            'also tap the bottom of the screen for student, or the teacher '
-            'button at the top right.',
-          );
+      const welcome =
+          'Welcome to AudioLearner. Say student to continue as a student, '
+          'or say teacher to continue as a teacher. You can also tap the '
+          'bottom of the screen for student, or the teacher button at the '
+          'top right.';
+      // Let TalkBack speak this if it is running, rather than talking over it.
+      if (AccessibilityMode.isScreenReaderActive) {
+        AccessibilityMode.announce(welcome);
+        return;
+      }
+      await ref.read(ttsServiceProvider).speakAndWait(welcome);
       if (mounted) unawaited(_listenForRole());
     });
+  }
+
+  /// Sends a previously signed-in student straight to the learning hub.
+  ///
+  /// Returns true when it navigated, so the caller skips the role prompt.
+  /// Any failure falls through to the normal flow — a student who cannot be
+  /// resumed must still be able to choose a role.
+  Future<bool> _resumeReturningStudent() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final studentId = prefs.getInt(kActiveStudentIdKey);
+      if (studentId == null || !mounted) return false;
+
+      // Confirm the row still exists — app data may have been cleared, and
+      // resuming into a hub with no student would strand them silently.
+      final student =
+          await ref.read(appDatabaseProvider).studentDao.getStudentById(studentId);
+      if (student == null || !mounted) return false;
+
+      _navigated = true;
+      final greeting = 'Welcome back, ${student.name}. Opening your lessons.';
+      if (AccessibilityMode.isScreenReaderActive) {
+        AccessibilityMode.announce(greeting);
+      } else {
+        unawaited(ref.read(ttsServiceProvider).speak(greeting));
+      }
+      if (!mounted) return false;
+      context.go('/student/home');
+      return true;
+    } catch (_) {
+      return false; // never block the normal path
+    }
   }
 
   Future<void> _speak(String text) async {

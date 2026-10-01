@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'db/app_database.dart';
 import 'tts_service.dart';
 import 'stt_service.dart';
-import 'device_mode_service.dart';
 import 'pin_service.dart';
 import 'file_extraction_service.dart';
 import 'ai_question_service.dart';
@@ -37,14 +36,6 @@ final ttsInitProvider = FutureProvider<void>(
 final sttServiceProvider = Provider<SttService>(
   (ref) => SttService(),
   name: 'sttServiceProvider',
-);
-
-// Device Mode (personal vs shared phone)
-/// Remembers whether this install is on a student's personal phone (no PIN) or
-/// a shared school phone (PIN kept). Read silently on every launch.
-final deviceModeServiceProvider = Provider<DeviceModeService>(
-  (ref) => DeviceModeService(),
-  name: 'deviceModeServiceProvider',
 );
 
 // PIN Service

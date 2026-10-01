@@ -1,0 +1,71 @@
+MATHEMATICS NOTES FOR PRIMARY FIVE (P.5)
+
+TOPIC: FRACTIONS
+
+1. MEANING OF A FRACTION
+
+A fraction is a number that represents a part of a whole.
+Every fraction has two parts, the numerator and the denominator.
+The numerator is the number written above the line in a fraction.
+The denominator is the number written below the line in a fraction.
+
+Example: In the fraction 3/4, the numerator is 3 and the denominator is 4.
+
+2. TYPES OF FRACTIONS
+
+A proper fraction is a fraction whose numerator is smaller than its denominator.
+An improper fraction is a fraction whose numerator is bigger than its denominator.
+A mixed number is a number that has a whole number part and a fraction part.
+Equivalent fractions are fractions that have the same value but different numbers.
+
+Example: 1/2, 2/4 and 4/8 are equivalent fractions because they all mean a half.
+
+3. CHANGING IMPROPER FRACTIONS TO MIXED NUMBERS
+
+Rules for changing an improper fraction to a mixed number:
+Divide the numerator by the denominator.
+Write the whole number answer first.
+Write the remainder as the new numerator over the same denominator.
+
+Example: Change 7/2 to a mixed number.
+Divide 7 by 2 to get 3 remainder 1.
+Answer: 3 1/2.
+
+4. ADDITION AND SUBTRACTION OF FRACTIONS
+
+When the denominators are the same, you add or subtract only the numerators.
+When the denominators are different, you must first find the lowest common multiple.
+
+Example: Work out 1/4 + 2/4.
+The denominators are the same, so add the numerators: 1 + 2 = 3.
+Answer: 3/4.
+
+Example: Work out 1/2 + 1/3.
+The lowest common multiple of 2 and 3 is 6.
+Change the fractions: 1/2 becomes 3/6 and 1/3 becomes 2/6.
+Add: 3/6 + 2/6 = 5/6.
+
+5. MULTIPLICATION OF FRACTIONS
+
+To multiply fractions you multiply the numerators together and the denominators together.
+
+Example: Work out 2/3 x 3/5.
+Multiply the numerators: 2 x 3 = 6.
+Multiply the denominators: 3 x 5 = 15.
+Answer: 6/15 which simplifies to 2/5.
+
+6. FRACTIONS OF QUANTITIES
+
+To find a fraction of a quantity you multiply the fraction by the quantity.
+
+Example: Find 1/4 of 20 mangoes.
+Multiply 1/4 by 20 to get 5.
+Answer: 5 mangoes.
+
+REVISION QUESTIONS
+
+1. Define a fraction.
+2. What is the numerator in the fraction 5/8?
+3. Change 9/4 into a mixed number.
+4. Work out 2/5 + 1/5.
+5. Find 1/3 of 27 books.

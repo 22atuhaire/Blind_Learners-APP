@@ -1,0 +1,172 @@
+MATHEMATICS NOTES FOR PRIMARY SIX (P.6)
+
+TOPIC: HIGHER NUMBER OPERATIONS
+
+1. PLACE VALUE AND VALUE OF LARGE NUMBERS
+
+In Primary Six, you work with numbers up to 7 digits or more. You must know the place value and the total value of each digit. The place value is the position of a digit in a number (like Ones, Tens, Hundreds, Thousands, Ten Thousands, Hundred Thousands, Millions).
+
+Example: In the number 4,567,890, the digit 5 is in the Hundred Thousands place, so its total value is 500,000.
+
+Example: In the number 3,486,789, if the digit 8 is underlined, its place value is Ten Thousands and its total value is 80,000.
+
+2. READING AND WRITING LARGE NUMBERS
+
+You need to convert figures to words and words to figures.
+
+Example: Write 35,000,900,010 in words.
+Break the number into periods: 35 (billions), 000 (millions), 900 (thousands), 010 (units).
+Read each period: Thirty-five billion, nine hundred thousand, ten.
+Answer: Thirty-five billion, nine hundred thousand, ten.
+
+Example: Write the following in symbols: Five hundred and ninety million, seven hundred thousand, five hundred.
+Break into parts: 590,000,000 + 700,000 + 500 = 590,700,500.
+
+3. ROUNDING OFF NUMBERS
+
+You round numbers to the nearest ten, hundred, thousand, or other place value.
+
+Rules for rounding:
+Look at the digit to the right of the place you are rounding to.
+If that digit is 5 or more, round up.
+If that digit is 4 or less, round down.
+
+Example: Round 89,365 to the nearest 100.
+Look at the hundreds digit (3) and the digit to the right (6).
+Since 6 is 5 or more, round up. 89,365 becomes 89,400.
+
+4. ADDITION AND SUBTRACTION OF LARGE NUMBERS
+
+You add and subtract numbers with up to 7 digits or more. Arrange the numbers correctly according to place values.
+
+Key terms:
+Addends are the numbers being added. The answer is the sum.
+In subtraction, the number being subtracted from is the minuend, the number subtracted is the subtrahend, and the answer is the difference.
+
+Example 1: Find the sum of 389,754 and 23,657.
+Arrange vertically and add.
+  389,754
++  23,657
+---------
+  413,411
+
+Example 2: Find the difference of 678,231 and 354,986.
+Arrange vertically and subtract. You may need to borrow.
+  678,231
+- 354,986
+---------
+  323,245
+
+Example 3: What must be added to 237,428 to get 885,643?
+This is a subtraction problem: 885,643 - 237,428 = 648,215.
+
+Example 4: A dairy processed 5,300,450 litres of milk and sold 3,450,833 litres. How many litres were left?
+Subtract: 5,300,450 - 3,450,833 = 1,849,617 litres.
+
+5. MULTIPLICATION OF LARGER NUMBERS
+
+You multiply 3-digit numbers by 2-digit numbers.
+
+Example: Multiply 345 by 27.
+  345
+x  27
+-----
+ 2415   (345 x 7)
+ 6900   (345 x 20)
+-----
+ 9315
+
+6. DIVISION OF LARGER NUMBERS
+
+You divide large numbers by 2-digit numbers.
+
+Example: Divide 1,248 by 24.
+24 goes into 124 five times (24 x 5 = 120), remainder 4. Bring down 8 to make 48. 24 goes into 48 two times (24 x 2 = 48), remainder 0.
+Answer: 52.
+
+7. MIXED OPERATIONS (BODMAS)
+
+When a number sentence has more than one operation, you must follow the order of operations: BODMAS.
+
+BODMAS stands for:
+Brackets
+Orders (powers and roots)
+Division
+Multiplication
+Addition
+Subtraction
+
+Example: Work out 345,783 – 472,096 + 432,562.
+Following BODMAS, addition and subtraction are done from left to right.
+First, add 345,783 and 432,562 = 778,345.
+Then subtract 472,096: 778,345 - 472,096 = 306,249.
+
+Example: Work out (45 + 23) x 6.
+First, do the brackets: 45 + 23 = 68.
+Then multiply: 68 x 6 = 408.
+
+8. DIVISIBILITY TESTS
+
+You use divisibility tests to check if a number can be divided by another number without a remainder.
+
+Rules for divisibility:
+A number is divisible by 2 if its last digit is even (0, 2, 4, 6, 8).
+A number is divisible by 3 if the sum of its digits is divisible by 3.
+A number is divisible by 5 if its last digit is 0 or 5.
+A number is divisible by 6 if it is divisible by both 2 and 3.
+A number is divisible by 9 if the sum of its digits is divisible by 9.
+A number is divisible by 10 if its last digit is 0.
+
+Example: Is 612 divisible by 6?
+Check divisibility by 2: last digit is 2, so yes.
+Check divisibility by 3: sum of digits is 6+1+2=9, which is divisible by 3, so yes.
+Since 612 is divisible by both 2 and 3, it is divisible by 6.
+
+Example: Is 20,121 divisible by 3?
+Sum of digits: 2+0+1+2+1=6, which is divisible by 3, so yes.
+
+9. NUMBER PATTERNS AND SEQUENCES
+
+You identify and complete number patterns.
+
+Example: Find the next two numbers in the pattern: 2, 4, 6, 8, 10, ...
+This is a pattern of adding 2 each time. The next numbers are 12 and 14.
+
+ACTIVITIES FOR P.6 PUPILS
+
+Activity 1: Write the place value and total value of the digit 7 in each number: 7,234,568; 4,567,890; 9,876,543.
+
+Activity 2: Write the following numbers in words: 45,670,123; 8,900,045; 123,456,789.
+
+Activity 3: Write the following in symbols: Two million, four hundred thousand, three hundred and twenty-one. Eighty-five billion, six hundred million.
+
+Activity 4: Round the following to the nearest indicated place: 456,789 (nearest thousand); 3,245,678 (nearest million); 89,765 (nearest hundred).
+
+Activity 5: Work out:
+a) 4,567,890 + 2,345,678
+b) 8,901,234 - 3,456,789
+c) 567 x 34
+d) 2,856 ÷ 28
+
+Activity 6: Use BODMAS to work out: (456 + 234) x 12; 1,234 - 567 + 890.
+
+Activity 7: Test if the following numbers are divisible by 3: 4,512; 33,333; 72,108.
+
+REVISION QUESTIONS
+
+1. What is the place value of the digit 9 in 9,876,543?
+2. Write 5,600,700,800 in words.
+3. Round 456,789 to the nearest ten thousand.
+4. Add 3,456,789 and 2,345,678.
+5. Subtract 4,567,890 from 12,345,678.
+6. Multiply 678 by 45.
+7. Divide 3,456 by 24.
+8. Use BODMAS to work out: 5,678 - 2,345 + 1,234.
+9. Is 4,512 divisible by 6? Explain.
+10. Complete the pattern: 3, 6, 9, 12, __, __.
+
+END OF NOTES
+
+Remember: Practice makes perfect. Keep working on your number operations and you will become a mathematics champion.
+
+Your Mathematics Teacher

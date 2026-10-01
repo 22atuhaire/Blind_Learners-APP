@@ -143,4 +143,75 @@ Following BODMAS, addition and subtraction are done from left to right.
       }
     });
   });
+
+  // Regression for the defect the evaluation harness (eval/) exposed: the
+  // generator walked sentences in reading order and stopped at five, so a
+  // multi-section note got five questions about its FIRST section and nothing
+  // about the rest. Measured recall was 42%; spreading selection across
+  // sections raised it to ~68%.
+  group('coverage spread across a multi-section note', () {
+    const note = '''
+ENGLISH NOTES FOR PRIMARY SIX
+
+2. NOUNS
+
+A noun is a word that names a person, a place, an animal or a thing.
+A common noun is a noun that names any one of a group of things.
+A proper noun is a noun that names a particular person or place.
+A collective noun is a noun that names a group of things taken together.
+
+3. PRONOUNS
+
+A pronoun is a word that is used in place of a noun.
+
+4. VERBS
+
+A verb is a word that shows an action or a state of being.
+
+5. ADJECTIVES
+
+An adjective is a word that describes a noun or a pronoun.
+
+6. ADVERBS
+
+An adverb is a word that describes a verb or an adjective.
+
+7. PREPOSITIONS
+
+A preposition is a word that shows the position of a noun.
+''';
+
+    late List<AiGeneratedQuestion> questions;
+    setUp(() => questions = AiQuestionService().generateQuestions(note));
+
+    test('does not spend every question on the first section', () {
+      final aboutNounTypes = questions
+          .where((q) =>
+              q.questionText.toLowerCase().contains('common noun') ||
+              q.questionText.toLowerCase().contains('proper noun') ||
+              q.questionText.toLowerCase().contains('collective noun'))
+          .length;
+      expect(aboutNounTypes, lessThan(3),
+          reason: 'quiz is clustered on one section again');
+    });
+
+    test('reaches later sections of the note', () {
+      final joined =
+          questions.map((q) => q.questionText.toLowerCase()).join(' | ');
+      final laterTopics = ['pronoun', 'verb', 'adjective', 'adverb', 'preposition']
+          .where(joined.contains)
+          .length;
+      expect(laterTopics, greaterThanOrEqualTo(3),
+          reason: 'later sections were never reached: $joined');
+    });
+
+    test('asks about distinct topics rather than repeating one', () {
+      final heads = questions
+          .map((q) => q.questionText.toLowerCase())
+          .map((t) => t.replaceAll(RegExp(r'^what (is|are) |^when (is|are) '), ''))
+          .toSet();
+      expect(heads.length, questions.length,
+          reason: 'duplicate question subjects: $heads');
+    });
+  });
 }

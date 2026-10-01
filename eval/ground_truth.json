@@ -1,0 +1,160 @@
+{
+  "_readme": [
+    "Ground truth for the AudioLearner question-generation evaluation (Proposal 3.5.1).",
+    "",
+    "For each lesson note, `coreConcepts` lists the facts a teacher would expect a",
+    "short revision quiz to test. They were chosen by reading each note as a teacher",
+    "would - BEFORE looking at what the generator produces - so that a concept the",
+    "generator structurally cannot reach still counts against recall. That is the",
+    "point: the ground truth must be able to fail the system.",
+    "",
+    "Five concepts per note matches the generator's 5-question cap, so recall asks a",
+    "fair question: 'do the five questions it produces cover the five things that",
+    "matter?' rather than penalising it for a length limit.",
+    "",
+    "`anchors` are distinctive phrases; a concept counts as COVERED when any anchor",
+    "appears in a generated question's text or its correct answer (case-insensitive)."
+  ],
+  "notes": [
+    {
+      "noteId": "01_number_operations_p6_math",
+      "title": "Higher Number Operations",
+      "subject": "Mathematics",
+      "grade": "P.6",
+      "source": "real",
+      "coreConcepts": [
+        { "id": "place_value", "concept": "Place value is the position of a digit in a number", "anchors": ["position of a digit", "place value"] },
+        { "id": "rounding_rule", "concept": "If the digit to the right is 5 or more, round up", "anchors": ["5 or more", "round up"] },
+        { "id": "addends", "concept": "Addends are the numbers being added", "anchors": ["addend", "numbers being added"] },
+        { "id": "bodmas_order", "concept": "Under BODMAS, addition and subtraction are done from left to right", "anchors": ["bodmas", "left to right"] },
+        { "id": "divisibility_two", "concept": "A number is divisible by 2 if its last digit is even", "anchors": ["divisible by 2", "last digit is even"] }
+      ]
+    },
+    {
+      "noteId": "02_living_things_p3_science",
+      "title": "Living and Non-Living Things",
+      "subject": "Science",
+      "grade": "P.3",
+      "source": "real",
+      "coreConcepts": [
+        { "id": "living_definition", "concept": "Living things are things that are alive", "anchors": ["living things are", "are alive"] },
+        { "id": "nonliving_definition", "concept": "Non-living things are things that are not alive", "anchors": ["non-living things", "not alive"] },
+        { "id": "characteristics", "concept": "MRS GREN summarises the characteristics of living things", "anchors": ["mrs gren", "characteristics of living"] },
+        { "id": "movement", "concept": "Living things can move by themselves; non-living things cannot", "anchors": ["move by itself", "move by themselves", "movement"] },
+        { "id": "reproduction", "concept": "Living things reproduce and produce young ones", "anchors": ["reproduction", "young ones", "reproduce"] }
+      ]
+    },
+    {
+      "noteId": "03_food_nutrition_p4_science",
+      "title": "Food and Nutrition",
+      "subject": "Science",
+      "grade": "P.4",
+      "source": "real",
+      "coreConcepts": [
+        { "id": "food_definition", "concept": "Food is anything we eat or drink that gives energy, helps growth and keeps us healthy", "anchors": ["food is anything", "eat or drink"] },
+        { "id": "carbohydrates", "concept": "Carbohydrates are energy-giving foods", "anchors": ["carbohydrate"] },
+        { "id": "proteins", "concept": "Proteins are body-building foods", "anchors": ["protein"] },
+        { "id": "balanced_diet", "concept": "A balanced diet contains all six classes of food in the right amounts", "anchors": ["balanced diet", "six classes"] },
+        { "id": "kwashiorkor", "concept": "Kwashiorkor is caused by lack of protein", "anchors": ["kwashiorkor"] }
+      ]
+    },
+    {
+      "noteId": "04_water_p5_science",
+      "title": "Water",
+      "subject": "Science",
+      "grade": "P.5",
+      "source": "authored",
+      "coreConcepts": [
+        { "id": "water_definition", "concept": "Water is a colourless, tasteless and odourless liquid", "anchors": ["colourless", "no smell", "tasteless"] },
+        { "id": "evaporation", "concept": "Evaporation is the change from liquid water to water vapour", "anchors": ["evaporation"] },
+        { "id": "condensation", "concept": "Condensation is the change from water vapour to liquid water", "anchors": ["condensation"] },
+        { "id": "safe_water", "concept": "Safe water is free from germs and dirt and is good for drinking", "anchors": ["safe water", "free from germs"] },
+        { "id": "boiling", "concept": "Boiling is the commonest method of making water safe at home", "anchors": ["boiling"] }
+      ]
+    },
+    {
+      "noteId": "05_digestive_system_p6_science",
+      "title": "The Digestive System",
+      "subject": "Science",
+      "grade": "P.6",
+      "source": "authored",
+      "coreConcepts": [
+        { "id": "digestion_definition", "concept": "Digestion is the process of breaking food into small particles the body can absorb", "anchors": ["digestion is", "broken down"] },
+        { "id": "alimentary_canal", "concept": "The alimentary canal runs from the mouth to the anus", "anchors": ["alimentary canal"] },
+        { "id": "incisors", "concept": "Incisors are the front teeth used for cutting and biting", "anchors": ["incisor"] },
+        { "id": "bile", "concept": "Bile is made by the liver and breaks fat into small droplets", "anchors": ["bile"] },
+        { "id": "small_intestine", "concept": "The small intestine is where most digestion and absorption take place", "anchors": ["small intestine"] }
+      ]
+    },
+    {
+      "noteId": "06_weather_climate_p5_sst",
+      "title": "Weather and Climate",
+      "subject": "Social Studies",
+      "grade": "P.5",
+      "source": "authored",
+      "coreConcepts": [
+        { "id": "weather_definition", "concept": "Weather is the condition of the atmosphere at a particular time", "anchors": ["condition of the atmosphere", "weather is"] },
+        { "id": "climate_definition", "concept": "Climate is the average weather condition over a long time", "anchors": ["average weather", "climate is"] },
+        { "id": "rain_gauge", "concept": "A rain gauge measures the amount of rainfall", "anchors": ["rain gauge"] },
+        { "id": "thermometer", "concept": "A thermometer measures temperature", "anchors": ["thermometer"] },
+        { "id": "relief_rainfall", "concept": "Relief rainfall forms when moist air is forced to rise over a mountain", "anchors": ["relief rainfall"] }
+      ]
+    },
+    {
+      "noteId": "07_physical_features_p5_sst",
+      "title": "Physical Features of Uganda",
+      "subject": "Social Studies",
+      "grade": "P.5",
+      "source": "authored",
+      "coreConcepts": [
+        { "id": "features_definition", "concept": "Physical features are natural things found on the earth's surface", "anchors": ["physical features are", "natural things"] },
+        { "id": "rwenzori", "concept": "Mount Rwenzori is the highest mountain in Uganda", "anchors": ["rwenzori"] },
+        { "id": "lake_victoria", "concept": "Lake Victoria is the largest lake in Uganda and Africa", "anchors": ["lake victoria"] },
+        { "id": "river_nile", "concept": "River Nile is the longest river in Africa and starts from Lake Victoria", "anchors": ["river nile", "longest river"] },
+        { "id": "rift_valley", "concept": "A rift valley forms when land sinks between two faults", "anchors": ["rift valley"] }
+      ]
+    },
+    {
+      "noteId": "08_fractions_p5_math",
+      "title": "Fractions",
+      "subject": "Mathematics",
+      "grade": "P.5",
+      "source": "authored",
+      "coreConcepts": [
+        { "id": "fraction_definition", "concept": "A fraction is a number that represents a part of a whole", "anchors": ["fraction is", "part of a whole"] },
+        { "id": "numerator", "concept": "The numerator is the number written above the line", "anchors": ["numerator"] },
+        { "id": "denominator", "concept": "The denominator is the number written below the line", "anchors": ["denominator"] },
+        { "id": "proper_fraction", "concept": "A proper fraction has a numerator smaller than its denominator", "anchors": ["proper fraction"] },
+        { "id": "equivalent_fractions", "concept": "Equivalent fractions have the same value but different numbers", "anchors": ["equivalent fraction"] }
+      ]
+    },
+    {
+      "noteId": "09_parts_of_speech_p6_english",
+      "title": "Parts of Speech",
+      "subject": "English",
+      "grade": "P.6",
+      "source": "authored",
+      "coreConcepts": [
+        { "id": "noun", "concept": "A noun names a person, place, animal or thing", "anchors": ["noun is", "names a person"] },
+        { "id": "pronoun", "concept": "A pronoun is used in place of a noun", "anchors": ["pronoun"] },
+        { "id": "verb", "concept": "A verb shows an action or a state of being", "anchors": ["verb is", "shows an action"] },
+        { "id": "adjective", "concept": "An adjective describes a noun or pronoun", "anchors": ["adjective"] },
+        { "id": "adverb", "concept": "An adverb describes a verb, adjective or another adverb", "anchors": ["adverb"] }
+      ]
+    },
+    {
+      "noteId": "10_hygiene_disease_p4_health",
+      "title": "Personal Hygiene and Disease Prevention",
+      "subject": "Health Education",
+      "grade": "P.4",
+      "source": "authored",
+      "coreConcepts": [
+        { "id": "hygiene_definition", "concept": "Personal hygiene is keeping our bodies and clothes clean to stay healthy", "anchors": ["personal hygiene is", "keeping our bodies"] },
+        { "id": "germ", "concept": "A germ is a very small living thing that causes disease", "anchors": ["germ is", "germ"] },
+        { "id": "malaria", "concept": "Malaria is spread by the female anopheles mosquito", "anchors": ["malaria"] },
+        { "id": "cholera", "concept": "Cholera is caused by drinking water containing germs", "anchors": ["cholera"] },
+        { "id": "immunisation", "concept": "Immunisation is giving a vaccine to protect against disease", "anchors": ["immunisation", "immunization", "vaccine"] }
+      ]
+    }
+  ]
+}

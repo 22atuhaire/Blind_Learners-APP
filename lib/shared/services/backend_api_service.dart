@@ -6,14 +6,25 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Default deployment of the VisioLearn backend.
+/// Default deployment of the AudioLearner backend.
 ///
-/// Hosted on Render's free tier, which spins the instance down after ~15
-/// minutes of inactivity; the first request after that can take 30-60 seconds.
-/// Fire [BackendApiService.warmUp] early (e.g. on the role-selection screen)
-/// so the instance is already awake by the time a student joins a class or
-/// syncs lessons.
-const String kDefaultBackendBaseUrl = 'https://visiolearn-backend.onrender.com';
+/// Overridable at build time, so one codebase can target either host without
+/// editing source — which is what makes the Render → Railway cutover safe:
+///
+///     flutter build apk --release \
+///       --dart-define=BACKEND_BASE_URL=https://audiolearner-backend.up.railway.app
+///
+/// Build against Railway to test it, and rebuild against the old Render URL if
+/// anything misbehaves, without touching a line of code.
+///
+/// A cold host can take 30-60 seconds to answer its first request (Render's
+/// free tier sleeps after ~15 minutes idle; Railway sleeps only on the trial
+/// plan). Fire [BackendApiService.warmUp] early — e.g. on the role-selection
+/// screen — so the instance is awake before a student joins a class or syncs.
+const String kDefaultBackendBaseUrl = String.fromEnvironment(
+  'BACKEND_BASE_URL',
+  defaultValue: 'https://visiolearn-backend.onrender.com',
+);
 
 class BackendApiException implements Exception {
   BackendApiException(this.message, {this.statusCode});
